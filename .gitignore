@@ -1,0 +1,18 @@
+# Build output
+**/bin/
+**/obj/
+
+# Visual Studio
+*.user
+.vs/
+
+# Environment-specific settings (use env vars in production)
+**/appsettings.*.json
+!**/appsettings.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
