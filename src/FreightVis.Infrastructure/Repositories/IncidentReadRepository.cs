@@ -182,9 +182,6 @@ ORDER BY IsSystem ASC;";   // system rows first; client rows overwrite
 
     public async Task<IncidentAnalyticsDto> GetAnalyticsAsync(IReadOnlyList<Guid> clientIds, CancellationToken ct)
     {
-        await using var conn = new MySqlConnection(_connectionString);
-        await conn.OpenAsync(ct);
-
         const string summarySql = @"
 SELECT
     COUNT(*)                                                                           AS Total,
@@ -225,27 +222,43 @@ LIMIT 10;";
 SELECT i.Location, i.Type, COUNT(*) AS Count
 FROM Incidents i
 INNER JOIN (
-    SELECT Location
+    SELECT Location, COUNT(*) AS LocationTotal
     FROM Incidents
     WHERE ClientId IN @ClientIds
     GROUP BY Location
-    ORDER BY COUNT(*) DESC
+    ORDER BY LocationTotal DESC
     LIMIT 8
 ) top ON i.Location = top.Location
 WHERE i.ClientId IN @ClientIds
 GROUP BY i.Location, i.Type
-ORDER BY (
-    SELECT COUNT(*) FROM Incidents sub
-    WHERE sub.ClientId IN @ClientIds AND sub.Location = i.Location
-) DESC, i.Type ASC;";
+ORDER BY top.LocationTotal DESC, i.Type ASC;";
 
         var p = new { ClientIds = clientIds };
 
-        var summary           = await conn.QuerySingleAsync<SummaryRow>        (new CommandDefinition(summarySql,           p, cancellationToken: ct));
-        var byType            = (await conn.QueryAsync<TypeCountDto>          (new CommandDefinition(byTypeSql,            p, cancellationToken: ct))).ToList();
-        var byMonth           = (await conn.QueryAsync<MonthlyRowDto>         (new CommandDefinition(byMonthSql,           p, cancellationToken: ct))).ToList();
-        var topLocations      = (await conn.QueryAsync<LocationCountDto>      (new CommandDefinition(locationsSql,         p, cancellationToken: ct))).ToList();
-        var byLocationAndType = (await conn.QueryAsync<LocationTypeCountDto>  (new CommandDefinition(byLocationAndTypeSql, p, cancellationToken: ct))).ToList();
+        async Task<T> One<T>(string sql) {
+            await using var c = new MySqlConnection(_connectionString);
+            await c.OpenAsync(ct);
+            return await c.QuerySingleAsync<T>(new CommandDefinition(sql, p, cancellationToken: ct));
+        }
+        async Task<List<T>> Many<T>(string sql) {
+            await using var c = new MySqlConnection(_connectionString);
+            await c.OpenAsync(ct);
+            return (await c.QueryAsync<T>(new CommandDefinition(sql, p, cancellationToken: ct))).ToList();
+        }
+
+        var summaryTask           = One<SummaryRow>         (summarySql);
+        var byTypeTask            = Many<TypeCountDto>       (byTypeSql);
+        var byMonthTask           = Many<MonthlyRowDto>      (byMonthSql);
+        var topLocationsTask      = Many<LocationCountDto>   (locationsSql);
+        var byLocationAndTypeTask = Many<LocationTypeCountDto>(byLocationAndTypeSql);
+
+        await Task.WhenAll(summaryTask, byTypeTask, byMonthTask, topLocationsTask, byLocationAndTypeTask);
+
+        var summary           = await summaryTask;
+        var byType            = await byTypeTask;
+        var byMonth           = await byMonthTask;
+        var topLocations      = await topLocationsTask;
+        var byLocationAndType = await byLocationAndTypeTask;
 
         return new IncidentAnalyticsDto(
             (int)summary.Total,

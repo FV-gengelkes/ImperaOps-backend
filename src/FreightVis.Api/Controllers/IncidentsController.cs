@@ -199,7 +199,6 @@ public sealed class IncidentsController : ControllerBase
 
         // Build activity events for changed fields
         var (actorId, actorName) = ResolveActor();
-        var actorIdNullable      = actorId;
         var now             = DateTimeOffset.UtcNow;
         var events          = new List<IncidentEvent>();
 
@@ -208,7 +207,7 @@ public sealed class IncidentsController : ControllerBase
             var labels   = await GetLookupLabelsAsync(existing.ClientId, "incident_type", ct);
             var oldLabel = labels.GetValueOrDefault(existing.Type, existing.Type.ToString());
             var newLabel = labels.GetValueOrDefault(req.Type, req.Type.ToString());
-            events.Add(NewEvent(id, existing.ClientId, "type_changed", actorIdNullable, actorName,
+            events.Add(NewEvent(id, existing.ClientId, "type_changed", actorId, actorName,
                 $"Type changed from \"{oldLabel}\" to \"{newLabel}\".", now));
         }
 
@@ -217,7 +216,7 @@ public sealed class IncidentsController : ControllerBase
             var labels   = await GetLookupLabelsAsync(existing.ClientId, "status", ct);
             var oldLabel = labels.GetValueOrDefault(existing.Status, existing.Status.ToString());
             var newLabel = labels.GetValueOrDefault(req.Status, req.Status.ToString());
-            events.Add(NewEvent(id, existing.ClientId, "status_changed", actorIdNullable, actorName,
+            events.Add(NewEvent(id, existing.ClientId, "status_changed", actorId, actorName,
                 $"Status changed from \"{oldLabel}\" to \"{newLabel}\".", now));
         }
 
@@ -240,7 +239,7 @@ public sealed class IncidentsController : ControllerBase
                     ? $"Owner assigned to {ownerName}."
                     : $"Owner changed to {ownerName}.";
             }
-            events.Add(NewEvent(id, existing.ClientId, "owner_changed", actorIdNullable, actorName, body, now));
+            events.Add(NewEvent(id, existing.ClientId, "owner_changed", actorId, actorName, body, now));
         }
 
         if (events.Count > 0)
@@ -312,7 +311,7 @@ public sealed class IncidentsController : ControllerBase
                 incident.OwnerUserId = req.OwnerUserId;
             }
 
-            incident.UpdatedAt = DateTime.UtcNow;
+            incident.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         if (events.Count > 0)
