@@ -1,22 +1,22 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: freightvis-mysql
+    container_name: imperaops-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: freightvis
-      MYSQL_USER: freightvis
-      MYSQL_PASSWORD: freightvis
+      MYSQL_DATABASE: imperaops
+      MYSQL_USER: imperaops
+      MYSQL_PASSWORD: imperaops
     ports:
       - "3306:3306"
     command: ["--default-authentication-plugin=mysql_native_password"]
     volumes:
-      - freightvis_mysql_data:/var/lib/mysql
+      - imperaops_mysql_data:/var/lib/mysql
 
   adminer:
     image: adminer:latest
-    container_name: freightvis-adminer
+    container_name: imperaops-adminer
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -25,7 +25,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: freightvis-minio
+    container_name: imperaops-minio
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -34,8 +34,8 @@ services:
       MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
     volumes:
-      - freightvis_minio_data:/data
+      - imperaops_minio_data:/data
 
 volumes:
-  freightvis_mysql_data:
-  freightvis_minio_data:
+  imperaops_mysql_data:
+  imperaops_minio_data:

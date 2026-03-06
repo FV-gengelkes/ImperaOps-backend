@@ -1,4 +1,4 @@
-# FreightVis Backend (Local MVP)
+# ImperaOps Backend (Local MVP)
 
 ## Prereqs
 - .NET SDK 9.x
@@ -9,11 +9,11 @@
 docker compose up -d
 ```
 Adminer: http://localhost:8080  
-MySQL: localhost:3306 (db: freightvis, user: freightvis, pass: freightvis)
+MySQL: localhost:3306 (db: imperaops, user: imperaops, pass: imperaops)
 
 ## Run API
 ```bash
-dotnet run --project src/FreightVis.Api
+dotnet run --project src/ImperaOps.Api
 ```
 API: http://localhost:5000  
 Swagger: http://localhost:5000/swagger  
