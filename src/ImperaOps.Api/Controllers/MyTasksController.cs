@@ -1,3 +1,4 @@
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -29,9 +30,8 @@ public sealed class MyTasksController : ScopedControllerBase
         [FromQuery] int daysAhead = 14,
         CancellationToken ct = default)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
-        if (!HasClientAccess(clientId)) return Forbid();
+        var actorId = CurrentUserId();
+        RequireClientAccess(clientId);
 
         daysAhead = Math.Clamp(daysAhead, 0, 365);
 
@@ -41,7 +41,7 @@ public sealed class MyTasksController : ScopedControllerBase
             .AsNoTracking()
             .Where(t =>
                 t.ClientId == clientId &&
-                t.AssignedToUserId == actorId.Value &&
+                t.AssignedToUserId == actorId &&
                 !t.IsComplete &&
                 t.DueAt != null &&
                 t.DueAt <= cutoff)

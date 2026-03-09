@@ -15,6 +15,8 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ImperaOps.Application.Abstractions.ICurrentUser, ImperaOps.Api.Services.HttpCurrentUser>();
 builder.Services.AddScoped<SessionValidationFilter>();
 builder.Services.AddControllers(options => options.Filters.AddService<SessionValidationFilter>());
 builder.Services.AddEndpointsApiExplorer();
@@ -159,6 +161,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+app.UseMiddleware<ImperaOps.Api.Middleware.ExceptionHandlingMiddleware>();
 app.UseCors("LocalDev");
 
 if (app.Environment.IsDevelopment())
@@ -211,6 +214,12 @@ RecurringJob.AddOrUpdate<SlaEscalationJob>(
     "sla-escalation",
     x => x.RunAsync(CancellationToken.None),
     "*/30 * * * *",        // every 30 minutes
+    new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+
+RecurringJob.AddOrUpdate<InsightDetectionJob>(
+    "insight-detection",
+    x => x.RunAsync(CancellationToken.None),
+    "0 */6 * * *",         // every 6 hours
     new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
 app.MapControllers();

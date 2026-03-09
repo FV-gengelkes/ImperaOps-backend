@@ -1,5 +1,6 @@
 using ImperaOps.Api.Contracts;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -18,11 +19,14 @@ public sealed class WorkflowTransitionsController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<WorkflowTransitionDto>>> GetTransitions(
         [FromQuery] long clientId, CancellationToken ct)
     {
-        if (clientId == 0) return BadRequest("clientId is required.");
+        if (clientId == 0) throw new ValidationException("clientId is required.");
+
+        var hasClientTransitions = await _db.WorkflowTransitions
+            .AnyAsync(t => t.ClientId == clientId, ct);
 
         var rows = await _db.WorkflowTransitions
             .AsNoTracking()
-            .Where(t => t.ClientId == 0 || t.ClientId == clientId)
+            .Where(t => hasClientTransitions ? t.ClientId == clientId : (t.ClientId == 0 || t.ClientId == clientId))
             .OrderBy(t => t.Id)
             .ToListAsync(ct);
 
@@ -35,7 +39,7 @@ public sealed class WorkflowTransitionsController : ControllerBase
     public async Task<ActionResult<WorkflowTransitionDto>> CreateTransition(
         [FromBody] CreateWorkflowTransitionRequest req, CancellationToken ct)
     {
-        if (req.ClientId == 0) return BadRequest("clientId is required.");
+        if (req.ClientId == 0) throw new ValidationException("clientId is required.");
 
         var transition = new WorkflowTransition
         {
@@ -61,7 +65,7 @@ public sealed class WorkflowTransitionsController : ControllerBase
     public async Task<IActionResult> DeleteTransition(long id, CancellationToken ct)
     {
         var transition = await _db.WorkflowTransitions.FindAsync([id], ct);
-        if (transition is null) return NotFound();
+        if (transition is null) throw new NotFoundException();
 
         transition.DeletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

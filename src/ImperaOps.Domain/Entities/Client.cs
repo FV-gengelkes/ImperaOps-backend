@@ -6,7 +6,8 @@ public sealed class Client : ISoftDeletable
     public long? ParentClientId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
-    public bool IsActive { get; set; } = true;
+    /// <summary>Active | Inactive | Demo | SalesDemo</summary>
+    public string Status { get; set; } = "Active";
     /// <summary>JSON array of template IDs applied to this client, e.g. ["tl-safety"].</summary>
     public string? AppliedTemplateIds { get; set; }
     // ── Branding ──────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 using ImperaOps.Api.Contracts;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -23,7 +24,7 @@ public sealed class CustomFieldsController : ControllerBase
         CancellationToken ct)
     {
         if (clientId == 0)
-            return BadRequest("clientId is required.");
+            throw new ValidationException("clientId is required.");
 
         var fields = await _db.CustomFields
             .AsNoTracking()
@@ -45,13 +46,13 @@ public sealed class CustomFieldsController : ControllerBase
         CancellationToken ct)
     {
         if (req.ClientId == 0)
-            return BadRequest("clientId is required.");
+            throw new ValidationException("clientId is required.");
 
         if (string.IsNullOrWhiteSpace(req.Name))
-            return BadRequest("Name is required.");
+            throw new ValidationException("Name is required.");
 
         if (string.IsNullOrWhiteSpace(req.DataType))
-            return BadRequest("DataType is required.");
+            throw new ValidationException("DataType is required.");
 
         var maxOrder = await _db.CustomFields
             .Where(f => f.ClientId == req.ClientId)
@@ -87,14 +88,14 @@ public sealed class CustomFieldsController : ControllerBase
         CancellationToken ct)
     {
         var field = await _db.CustomFields.FindAsync([id], ct);
-        if (field is null) return NotFound();
-        if (field.ClientId != req.ClientId) return StatusCode(403, "ClientId mismatch.");
+        if (field is null) throw new NotFoundException();
+        if (field.ClientId != req.ClientId) throw new ForbiddenException("ClientId mismatch.");
 
         if (string.IsNullOrWhiteSpace(req.Name))
-            return BadRequest("Name is required.");
+            throw new ValidationException("Name is required.");
 
         if (string.IsNullOrWhiteSpace(req.DataType))
-            return BadRequest("DataType is required.");
+            throw new ValidationException("DataType is required.");
 
         field.Name       = req.Name.Trim();
         field.DataType   = req.DataType;
@@ -115,8 +116,8 @@ public sealed class CustomFieldsController : ControllerBase
         CancellationToken ct)
     {
         var field = await _db.CustomFields.FindAsync([id], ct);
-        if (field is null) return NotFound();
-        if (field.ClientId != clientId) return StatusCode(403, "ClientId mismatch.");
+        if (field is null) throw new NotFoundException();
+        if (field.ClientId != clientId) throw new ForbiddenException("ClientId mismatch.");
 
         field.IsActive  = false;
         field.UpdatedAt = DateTimeOffset.UtcNow;
@@ -134,8 +135,8 @@ public sealed class CustomFieldsController : ControllerBase
         [FromQuery] long clientId,
         CancellationToken ct)
     {
-        if (entityId == 0)  return BadRequest("entityId is required.");
-        if (clientId == 0)  return BadRequest("clientId is required.");
+        if (entityId == 0)  throw new ValidationException("entityId is required.");
+        if (clientId == 0)  throw new ValidationException("clientId is required.");
 
         var fields = await _db.CustomFields
             .AsNoTracking()
@@ -174,8 +175,8 @@ public sealed class CustomFieldsController : ControllerBase
         [FromBody] UpsertCustomFieldValuesRequest req,
         CancellationToken ct)
     {
-        if (req.EntityId == 0)  return BadRequest("entityId is required.");
-        if (req.ClientId == 0)  return BadRequest("clientId is required.");
+        if (req.EntityId == 0)  throw new ValidationException("entityId is required.");
+        if (req.ClientId == 0)  throw new ValidationException("clientId is required.");
 
         var now = DateTimeOffset.UtcNow;
 

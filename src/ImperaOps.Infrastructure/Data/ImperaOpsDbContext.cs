@@ -26,6 +26,14 @@ public sealed class ImperaOpsDbContext : DbContext
     public DbSet<RootCauseTaxonomyItem> RootCauseTaxonomyItems => Set<RootCauseTaxonomyItem>();
     public DbSet<SlaRule> SlaRules => Set<SlaRule>();
     public DbSet<ClientWebhook> ClientWebhooks => Set<ClientWebhook>();
+    public DbSet<EventLinkGroup> EventLinkGroups => Set<EventLinkGroup>();
+    public DbSet<EventLink> EventLinks => Set<EventLink>();
+    public DbSet<InsightAlert> InsightAlerts => Set<InsightAlert>();
+    public DbSet<Investigation> Investigations => Set<Investigation>();
+    public DbSet<InvestigationWitness> InvestigationWitnesses => Set<InvestigationWitness>();
+    public DbSet<InvestigationEvidence> InvestigationEvidence => Set<InvestigationEvidence>();
+    public DbSet<ClientDocument> ClientDocuments => Set<ClientDocument>();
+    public DbSet<DocumentReference> DocumentReferences => Set<DocumentReference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -277,6 +285,118 @@ public sealed class ImperaOpsDbContext : DbContext
             b.Property(x => x.EventTypes).HasColumnType("longtext").IsRequired();
             b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
             b.HasIndex(x => x.ClientId);
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<EventLinkGroup>(b =>
+        {
+            b.ToTable("EventLinkGroups");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Title).HasMaxLength(500).IsRequired();
+            b.Property(x => x.Description).HasColumnType("longtext");
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => x.ClientId);
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<EventLink>(b =>
+        {
+            b.ToTable("EventLinks");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => new { x.ClientId, x.LinkGroupId });
+            b.HasIndex(x => new { x.LinkGroupId, x.EventId }).IsUnique();
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<InsightAlert>(b =>
+        {
+            b.ToTable("InsightAlerts");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.AlertType).HasMaxLength(50).IsRequired();
+            b.Property(x => x.Severity).HasMaxLength(20).IsRequired();
+            b.Property(x => x.Title).HasMaxLength(500).IsRequired();
+            b.Property(x => x.Body).HasColumnType("longtext").IsRequired();
+            b.Property(x => x.MetadataJson).HasColumnType("longtext");
+            b.Property(x => x.RelatedEventIds).HasColumnType("longtext");
+            b.Property(x => x.AiSummary).HasColumnType("longtext");
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => new { x.ClientId, x.AlertType, x.GeneratedAt });
+            b.HasIndex(x => new { x.ClientId, x.IsAcknowledged });
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<Investigation>(b =>
+        {
+            b.ToTable("Investigations");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            b.Property(x => x.Summary).HasColumnType("longtext");
+            b.Property(x => x.RootCauseAnalysis).HasColumnType("longtext");
+            b.Property(x => x.CorrectiveActions).HasColumnType("longtext");
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => x.EventId).IsUnique();
+            b.HasIndex(x => new { x.ClientId, x.Status });
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<InvestigationWitness>(b =>
+        {
+            b.ToTable("InvestigationWitnesses");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.WitnessName).HasMaxLength(200).IsRequired();
+            b.Property(x => x.WitnessContact).HasMaxLength(200);
+            b.Property(x => x.Statement).HasColumnType("longtext").IsRequired();
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => new { x.InvestigationId, x.SortOrder });
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<ClientDocument>(b =>
+        {
+            b.ToTable("ClientDocuments");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Title).HasMaxLength(300).IsRequired();
+            b.Property(x => x.Description).HasColumnType("longtext");
+            b.Property(x => x.Category).HasMaxLength(50).IsRequired();
+            b.Property(x => x.StorageKey).HasMaxLength(500).IsRequired();
+            b.Property(x => x.FileName).HasMaxLength(255).IsRequired();
+            b.Property(x => x.ContentType).HasMaxLength(255).IsRequired();
+            b.Property(x => x.UploadedByDisplayName).HasMaxLength(128).IsRequired();
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => new { x.ClientId, x.Category });
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<DocumentReference>(b =>
+        {
+            b.ToTable("DocumentReferences");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.EntityType).HasMaxLength(50).IsRequired();
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => new { x.EntityType, x.EntityId });
+            b.HasIndex(x => x.DocumentId);
+            b.HasIndex(x => new { x.DocumentId, x.EntityType, x.EntityId }).IsUnique();
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<InvestigationEvidence>(b =>
+        {
+            b.ToTable("InvestigationEvidence");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Title).HasMaxLength(500).IsRequired();
+            b.Property(x => x.Description).HasColumnType("longtext");
+            b.Property(x => x.EvidenceType).HasMaxLength(50).IsRequired();
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => new { x.InvestigationId, x.SortOrder });
             b.HasQueryFilter(x => x.DeletedAt == null);
         });
     }

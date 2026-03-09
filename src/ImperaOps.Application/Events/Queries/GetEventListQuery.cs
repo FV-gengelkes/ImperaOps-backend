@@ -11,5 +11,7 @@ public sealed record GetEventListQuery(
     long? WorkflowStatusId,
     DateTime? DateFrom,
     DateTime? DateTo,
-    string? Search
+    string? Search,
+    bool SlaBreached = false,
+    bool? IsClosed = null
 ) : IRequest<PagedResult<EventListItemDto>>;

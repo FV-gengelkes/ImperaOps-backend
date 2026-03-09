@@ -15,5 +15,6 @@ public sealed class GetEventListHandler : IRequestHandler<GetEventListQuery, Pag
         => _readRepo.GetListAsync(
             request.ClientId, request.Page, request.PageSize,
             request.EventTypeId, request.WorkflowStatusId,
-            request.DateFrom, request.DateTo, request.Search, ct);
+            request.DateFrom, request.DateTo, request.Search, ct,
+            request.SlaBreached, request.IsClosed);
 }

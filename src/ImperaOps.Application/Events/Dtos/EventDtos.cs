@@ -19,6 +19,7 @@ public sealed class EventListItemDto
     public long? OwnerUserId { get; set; }
     public string? OwnerDisplayName { get; set; }
     public long ReferenceNumber { get; set; }
+    public int LinkGroupCount { get; set; }
 }
 
 public sealed class EventDetailDto
@@ -47,6 +48,8 @@ public sealed class EventDetailDto
     public string? RootCauseName { get; set; }
     public string? CorrectiveAction { get; set; }
     public SlaStatusDto? Sla { get; set; }
+    public bool HasInvestigation { get; set; }
+    public string? InvestigationStatus { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
@@ -65,7 +68,8 @@ public sealed record EventAnalyticsDto(
     IReadOnlyList<EventLocationTypeCountDto> ByLocationAndType,
     IReadOnlyList<EventRootCauseCountDto> ByRootCause,
     double? AvgResolutionDays,
-    double? SlaClosureComplianceRate
+    double? SlaClosureComplianceRate,
+    int SlaBreachedCount
 );
 
 public sealed record EventRootCauseCountDto(string Name, long Count);

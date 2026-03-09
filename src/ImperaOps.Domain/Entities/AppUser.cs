@@ -8,6 +8,7 @@ public sealed class AppUser : ISoftDeletable
     public string PasswordHash { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public bool IsSuperAdmin { get; set; } = false;
+    public long?   ActiveClientId { get; set; }
     public string? TotpSecret    { get; set; }
     public bool    IsTotpEnabled { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

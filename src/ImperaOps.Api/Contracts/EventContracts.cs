@@ -34,10 +34,3 @@ public sealed record BulkUpdateEventRequest(
 public sealed record BulkDeleteEventRequest(long ClientId, string[] EventPublicIds);
 
 public sealed record CreateEventResponse(long EventId, string PublicId);
-
-public sealed record WorkloadRowDto(
-    long? UserId,
-    string UserName,
-    int OpenEvents,
-    int OpenTasks
-);

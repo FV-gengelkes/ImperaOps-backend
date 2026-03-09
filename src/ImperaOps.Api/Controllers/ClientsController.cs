@@ -1,5 +1,6 @@
 using ImperaOps.Api.Contracts;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Email;
 using ImperaOps.Infrastructure.Storage;
@@ -37,11 +38,11 @@ public sealed class ClientsController : ScopedControllerBase
     [HttpGet("{clientId:long}/branding")]
     public async Task<ActionResult<ClientBrandingDto>> GetBranding(long clientId, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
+        RequireClientAccess(clientId);
 
         var client = await _db.Clients.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == clientId, ct);
-        if (client is null) return NotFound();
+        if (client is null) throw new NotFoundException();
 
         string? logoUrl = null;
         if (client.LogoStorageKey is not null)
@@ -62,8 +63,8 @@ public sealed class ClientsController : ScopedControllerBase
         long clientId, CancellationToken ct)
     {
         if (clientId == 0)
-            return BadRequest("clientId must not be empty.");
-        if (!HasClientAccess(clientId)) return NotFound();
+            throw new ValidationException("clientId must not be empty.");
+        RequireClientAccess(clientId);
 
         var rows = await _db.UserClientAccess
             .AsNoTracking()
@@ -86,17 +87,17 @@ public sealed class ClientsController : ScopedControllerBase
     public async Task<ActionResult<ClientUserDto>> AddUserToClient(
         long clientId, [FromBody] AddClientUserRequest req, CancellationToken ct)
     {
-        if (clientId == 0) return BadRequest("clientId must not be empty.");
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.Email)) return BadRequest("Email is required.");
+        if (clientId == 0) throw new ValidationException("clientId must not be empty.");
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.Email)) throw new ValidationException("Email is required.");
 
         var email = req.Email.Trim().ToLowerInvariant();
         var user = await _db.Users.AsNoTracking()
             .FirstOrDefaultAsync(u => u.Email == email, ct);
 
-        if (user is null) return NotFound("No user found with that email address.");
-        if (!user.IsActive) return BadRequest("That user account is inactive.");
+        if (user is null) throw new NotFoundException("No user found with that email address.");
+        if (!user.IsActive) throw new ValidationException("That user account is inactive.");
 
         var role = req.Role?.Trim() is { Length: > 0 } r ? r : "Member";
 
@@ -105,7 +106,7 @@ public sealed class ClientsController : ScopedControllerBase
             .FirstOrDefaultAsync(a => a.UserId == user.Id && a.ClientId == clientId, ct);
 
         if (existingAccess is not null && existingAccess.DeletedAt == null)
-            return Conflict("This user already has access to this client.");
+            throw new ConflictException("This user already has access to this client.");
 
         if (existingAccess is not null)
         {
@@ -124,8 +125,8 @@ public sealed class ClientsController : ScopedControllerBase
             });
         }
 
-        _db.AuditEvents.Add(MakeAudit("user_client_access", user.Id, clientId, "access_granted",
-            $"User \"{user.Email}\" added as {role}."));
+        Audit.Record("user_client_access", user.Id, clientId, "access_granted",
+            $"User \"{user.Email}\" added as {role}.");
         await _db.SaveChangesAsync(ct);
         return Ok(new ClientUserDto(user.Id, user.DisplayName, user.Email, role, user.IsActive, user.IsSuperAdmin));
     }
@@ -138,18 +139,18 @@ public sealed class ClientsController : ScopedControllerBase
     public async Task<IActionResult> UpdateUserRole(
         long clientId, long userId, [FromBody] UpdateClientUserRoleRequest req, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.Role)) return BadRequest("Role is required.");
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.Role)) throw new ValidationException("Role is required.");
 
         var access = await _db.UserClientAccess
             .FirstOrDefaultAsync(a => a.UserId == userId && a.ClientId == clientId, ct);
 
-        if (access is null) return NotFound();
+        if (access is null) throw new NotFoundException();
 
         access.Role = req.Role.Trim();
-        _db.AuditEvents.Add(MakeAudit("user_client_access", userId, clientId, "role_changed",
-            $"Role changed to {access.Role}."));
+        Audit.Record("user_client_access", userId, clientId, "role_changed",
+            $"Role changed to {access.Role}.");
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
@@ -164,19 +165,19 @@ public sealed class ClientsController : ScopedControllerBase
     public async Task<ActionResult<ClientUserDto>> InviteUser(
         long clientId, [FromBody] InviteUserRequest req, CancellationToken ct)
     {
-        if (clientId == 0)                               return BadRequest("clientId must not be empty.");
-        if (!HasClientAccess(clientId))                  return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.Email))        return BadRequest("Email is required.");
-        if (string.IsNullOrWhiteSpace(req.DisplayName))  return BadRequest("Display name is required.");
+        if (clientId == 0)                               throw new ValidationException("clientId must not be empty.");
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.Email))        throw new ValidationException("Email is required.");
+        if (string.IsNullOrWhiteSpace(req.DisplayName))  throw new ValidationException("Display name is required.");
 
         var email = req.Email.Trim().ToLowerInvariant();
 
         if (await _db.Users.AnyAsync(u => u.Email == email, ct))
-            return Conflict("An account with that email already exists — use Add instead.");
+            throw new ConflictException("An account with that email already exists — use Add instead.");
 
         if (!await _db.Clients.AnyAsync(c => c.Id == clientId, ct))
-            return NotFound("Client not found.");
+            throw new NotFoundException("Client not found.");
 
         var role = req.Role?.Trim() is { Length: > 0 } r ? r : "Member";
 
@@ -210,8 +211,8 @@ public sealed class ClientsController : ScopedControllerBase
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
             CreatedAt = DateTimeOffset.UtcNow,
         });
-        _db.AuditEvents.Add(MakeAudit("user", user.Id, clientId, "invited",
-            $"User \"{user.Email}\" invited as {role}."));
+        Audit.Record("user", user.Id, clientId, "invited",
+            $"User \"{user.Email}\" invited as {role}.");
 
         await _db.SaveChangesAsync(ct);
 
@@ -245,11 +246,11 @@ public sealed class ClientsController : ScopedControllerBase
     public async Task<ActionResult<IReadOnlyList<ClientUserDto>>> GetFamilyUsers(
         long clientId, CancellationToken ct)
     {
-        if (!IsSuperAdmin) return Forbid();
+        if (!IsSuperAdmin) throw new ForbiddenException();
 
         var client = await _db.Clients.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == clientId, ct);
-        if (client is null) return NotFound();
+        if (client is null) throw new NotFoundException();
 
         var rootId = client.ParentClientId ?? clientId;
 
@@ -286,22 +287,22 @@ public sealed class ClientsController : ScopedControllerBase
     public async Task<IActionResult> UpdateClientUser(
         long clientId, long userId, [FromBody] UpdateClientUserRequest req, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.DisplayName)) return BadRequest("Display name is required.");
-        if (string.IsNullOrWhiteSpace(req.Email))       return BadRequest("Email is required.");
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.DisplayName)) throw new ValidationException("Display name is required.");
+        if (string.IsNullOrWhiteSpace(req.Email))       throw new ValidationException("Email is required.");
 
         var hasAccess = await _db.UserClientAccess
             .AnyAsync(a => a.UserId == userId && a.ClientId == clientId, ct);
-        if (!hasAccess) return NotFound();
+        if (!hasAccess) throw new NotFoundException();
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is null) return NotFound();
+        if (user is null) throw new NotFoundException();
 
         var email = req.Email.Trim().ToLowerInvariant();
 
         if (await _db.Users.AnyAsync(u => u.Email == email && u.Id != userId, ct))
-            return Conflict("That email address is already in use.");
+            throw new ConflictException("That email address is already in use.");
 
         var oldName  = user.DisplayName;
         var oldEmail = user.Email;
@@ -313,8 +314,8 @@ public sealed class ClientsController : ScopedControllerBase
         if (oldName  != user.DisplayName) changes.Add($"name → \"{user.DisplayName}\"");
         if (oldEmail != user.Email)       changes.Add($"email → \"{user.Email}\"");
 
-        _db.AuditEvents.Add(MakeAudit("user", userId, clientId, "updated",
-            changes.Count > 0 ? string.Join("; ", changes) + "." : "Updated."));
+        Audit.Record("user", userId, clientId, "updated",
+            changes.Count > 0 ? string.Join("; ", changes) + "." : "Updated.");
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
@@ -327,17 +328,17 @@ public sealed class ClientsController : ScopedControllerBase
     public async Task<IActionResult> RemoveUserFromClient(
         long clientId, long userId, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
 
         var access = await _db.UserClientAccess
             .FirstOrDefaultAsync(a => a.UserId == userId && a.ClientId == clientId, ct);
 
-        if (access is null) return NotFound();
+        if (access is null) throw new NotFoundException();
 
         access.DeletedAt = DateTimeOffset.UtcNow;
-        _db.AuditEvents.Add(MakeAudit("user_client_access", userId, clientId, "access_revoked",
-            "User removed from client."));
+        Audit.Record("user_client_access", userId, clientId, "access_revoked",
+            "User removed from client.");
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }

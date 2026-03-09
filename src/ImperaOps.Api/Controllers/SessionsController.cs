@@ -1,3 +1,4 @@
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,14 +27,13 @@ public sealed class SessionsController : ScopedControllerBase
     [HttpGet]
     public async Task<ActionResult<List<SessionDto>>> GetSessions(CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         var currentSid = User.FindFirst("sid")?.Value;
 
         var sessions = await _db.UserTokens
             .AsNoTracking()
-            .Where(t => t.UserId == actorId.Value && t.Type == "Session" && t.ExpiresAt > DateTimeOffset.UtcNow)
+            .Where(t => t.UserId == actorId && t.Type == "Session" && t.ExpiresAt > DateTimeOffset.UtcNow)
             .OrderByDescending(t => t.CreatedAt)
             .Select(t => new SessionDto(t.Id, t.Description, t.CreatedAt, t.ExpiresAt, t.Token == currentSid))
             .ToListAsync(ct);
@@ -46,13 +46,12 @@ public sealed class SessionsController : ScopedControllerBase
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> RevokeSession(long id, CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         var session = await _db.UserTokens
-            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == actorId.Value && t.Type == "Session", ct);
+            .FirstOrDefaultAsync(t => t.Id == id && t.UserId == actorId && t.Type == "Session", ct);
 
-        if (session is null) return NotFound();
+        if (session is null) throw new NotFoundException();
 
         session.DeletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -64,13 +63,12 @@ public sealed class SessionsController : ScopedControllerBase
     [HttpDelete("others")]
     public async Task<IActionResult> RevokeOtherSessions(CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         var currentSid = User.FindFirst("sid")?.Value;
 
         await _db.UserTokens
-            .Where(t => t.UserId == actorId.Value && t.Type == "Session"
+            .Where(t => t.UserId == actorId && t.Type == "Session"
                      && (currentSid == null || t.Token != currentSid))
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.DeletedAt, DateTimeOffset.UtcNow), ct);
 

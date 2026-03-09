@@ -4,6 +4,7 @@ using ImperaOps.Application.Events.Commands;
 using ImperaOps.Application.Events.Dtos;
 using ImperaOps.Application.Events.Queries;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Notifications;
 using ImperaOps.Infrastructure.Webhooks;
@@ -12,7 +13,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
-using SlaStatusDto = ImperaOps.Application.Events.Dtos.SlaStatusDto;
 
 namespace ImperaOps.Api.Controllers;
 
@@ -46,12 +46,14 @@ public sealed class EventsController : ScopedControllerBase
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] string? search = null,
+        [FromQuery] bool slaBreached = false,
+        [FromQuery] bool? isClosed = null,
         CancellationToken ct = default)
     {
-        if (clientId == 0) return BadRequest("clientId is required.");
-        if (!HasClientAccess(clientId)) return NotFound();
+        if (clientId == 0) throw new ValidationException("clientId is required.");
+        RequireClientAccess(clientId);
         var res = await _mediator.Send(
-            new GetEventListQuery(clientId, page, pageSize, eventTypeId, workflowStatusId, dateFrom, dateTo, search), ct);
+            new GetEventListQuery(clientId, page, pageSize, eventTypeId, workflowStatusId, dateFrom, dateTo, search, slaBreached, isClosed), ct);
         return Ok(res);
     }
 
@@ -68,9 +70,9 @@ public sealed class EventsController : ScopedControllerBase
             ? list
             : clientId != 0 ? new List<long> { clientId } : null;
 
-        if (ids is null || ids.Count == 0) return BadRequest("At least one clientId is required.");
+        if (ids is null || ids.Count == 0) throw new ValidationException("At least one clientId is required.");
         ids = ids.Where(HasClientAccess).ToList();
-        if (ids.Count == 0) return NotFound();
+        if (ids.Count == 0) throw new NotFoundException();
         var res = await _mediator.Send(new GetEventAnalyticsQuery(ids, dateFrom, dateTo), ct);
         return Ok(res);
     }
@@ -86,8 +88,8 @@ public sealed class EventsController : ScopedControllerBase
         [FromQuery] string? search,
         CancellationToken ct = default)
     {
-        if (clientId == 0) return BadRequest("clientId is required.");
-        if (!HasClientAccess(clientId)) return NotFound();
+        if (clientId == 0) throw new ValidationException("clientId is required.");
+        RequireClientAccess(clientId);
         var rows     = await _readRepo.GetExportDataAsync(clientId, eventTypeId, workflowStatusId, dateFrom, dateTo, search, ct);
         var csv      = BuildCsv(rows);
         var filename = $"events-{DateTime.UtcNow:yyyy-MM-dd}.csv";
@@ -120,87 +122,22 @@ public sealed class EventsController : ScopedControllerBase
 
     [Authorize]
     [HttpGet("workload")]
-    public async Task<ActionResult<IReadOnlyList<WorkloadRowDto>>> GetWorkload(
+    public async Task<ActionResult<IReadOnlyList<Application.Events.Dtos.WorkloadRowDto>>> GetWorkload(
         [FromQuery] long clientId, CancellationToken ct = default)
     {
-        if (clientId == 0) return BadRequest("clientId is required.");
-        if (!HasClientAccess(clientId)) return NotFound();
-
-        var closedStatusIds = await _db.WorkflowStatuses
-            .Where(s => (s.ClientId == 0 || s.ClientId == clientId) && s.IsClosed)
-            .Select(s => s.Id)
-            .ToListAsync(ct);
-
-        var ownerGroups = await _db.Events
-            .Where(e => e.ClientId == clientId && !closedStatusIds.Contains(e.WorkflowStatusId))
-            .GroupBy(e => e.OwnerUserId)
-            .Select(g => new { UserId = g.Key, OpenEvents = g.Count() })
-            .ToListAsync(ct);
-
-        var userIds = ownerGroups.Where(x => x.UserId.HasValue).Select(x => x.UserId!.Value).ToList();
-
-        var names = await _db.Users
-            .Where(u => userIds.Contains(u.Id))
-            .Select(u => new { u.Id, u.DisplayName })
-            .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
-
-        var taskCounts = await _db.Tasks
-            .Where(t => t.ClientId == clientId && !t.IsComplete && t.AssignedToUserId.HasValue)
-            .GroupBy(t => t.AssignedToUserId!.Value)
-            .Select(g => new { UserId = g.Key, OpenTasks = g.Count() })
-            .ToDictionaryAsync(x => x.UserId, x => x.OpenTasks, ct);
-
-        var result = ownerGroups
-            .OrderByDescending(x => x.OpenEvents)
-            .Select(x => new WorkloadRowDto(
-                x.UserId,
-                x.UserId.HasValue ? (names.GetValueOrDefault(x.UserId.Value) ?? "Unknown") : "Unassigned",
-                x.OpenEvents,
-                x.UserId.HasValue ? taskCounts.GetValueOrDefault(x.UserId.Value, 0) : 0))
-            .ToList();
-
+        if (clientId == 0) throw new ValidationException("clientId is required.");
+        RequireClientAccess(clientId);
+        var result = await _mediator.Send(new GetWorkloadQuery(clientId), ct);
         return Ok(result);
     }
 
     [Authorize]
     [HttpGet("{publicId}")]
     public async Task<ActionResult<EventDetailDto>> GetDetail(
-        [FromRoute] string publicId, CancellationToken ct = default)
+        [FromRoute] string publicId, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var res = await _mediator.Send(new GetEventDetailQuery(publicId), ct);
-        if (res is null || !HasClientAccess(res.ClientId)) return NotFound();
-
-        // Compute SLA status
-        var slaRule = await _db.SlaRules
-            .AsNoTracking()
-            .Where(r => r.ClientId == res.ClientId)
-            .OrderBy(r => r.EventTypeId == null ? 1 : 0) // specific rule wins
-            .FirstOrDefaultAsync(r =>
-                r.EventTypeId == res.EventTypeId || r.EventTypeId == null, ct);
-
-        if (slaRule != null)
-        {
-            var now = DateTimeOffset.UtcNow;
-            var createdAt = new DateTimeOffset(res.CreatedAt, TimeSpan.Zero);
-
-            DateTimeOffset? invDeadline = slaRule.InvestigationHours.HasValue
-                ? createdAt.AddHours(slaRule.InvestigationHours.Value)
-                : null;
-            DateTimeOffset? closureDeadline = slaRule.ClosureHours.HasValue
-                ? createdAt.AddHours(slaRule.ClosureHours.Value)
-                : null;
-
-            res.Sla = new SlaStatusDto
-            {
-                RuleId                = slaRule.Id,
-                RuleName              = slaRule.Name,
-                InvestigationDeadline = invDeadline,
-                InvestigationBreached = invDeadline.HasValue && res.OwnerUserId == null && !res.WorkflowStatusIsClosed && now > invDeadline.Value,
-                ClosureDeadline       = closureDeadline,
-                ClosureBreached       = closureDeadline.HasValue && !res.WorkflowStatusIsClosed && now > closureDeadline.Value,
-            };
-        }
-
+        var res = await _mediator.Send(new GetEventDetailQuery(publicId, clientId > 0 ? clientId : null), ct);
+        if (res is null || !HasClientAccess(res.ClientId)) throw new NotFoundException();
         return Ok(res);
     }
 
@@ -209,12 +146,12 @@ public sealed class EventsController : ScopedControllerBase
     public async Task<ActionResult<CreateEventResponse>> Create(
         [FromBody] CreateEventRequest req, CancellationToken ct = default)
     {
-        if (req.ClientId == 0)                            return BadRequest("ClientId is required.");
-        if (!HasClientAccess(req.ClientId))               return NotFound();
-        if (!await IsManagerOrAboveAsync(_db, req.ClientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.Title))         return BadRequest("Title is required.");
-        if (string.IsNullOrWhiteSpace(req.Location))      return BadRequest("Location is required.");
-        if (string.IsNullOrWhiteSpace(req.Description))   return BadRequest("Description is required.");
+        if (req.ClientId == 0)                            throw new ValidationException("ClientId is required.");
+        RequireClientAccess(req.ClientId);
+        if (!await IsManagerOrAboveAsync(_db, req.ClientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.Title))         throw new ValidationException("Title is required.");
+        if (string.IsNullOrWhiteSpace(req.Location))      throw new ValidationException("Location is required.");
+        if (string.IsNullOrWhiteSpace(req.Description))   throw new ValidationException("Description is required.");
 
         var result = await _mediator.Send(new CreateEventCommand(
             req.ClientId, req.EventTypeId, req.WorkflowStatusId,
@@ -222,18 +159,7 @@ public sealed class EventsController : ScopedControllerBase
             req.ReportedByUserId), ct);
 
         // Log audit event
-        var (actorId, actorName) = ResolveActor();
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = req.ClientId,
-            EntityType      = "event",
-            EntityId        = result.EventId,
-            EventType       = "created",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = "Event reported.",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", result.EventId, req.ClientId, "created", "Event reported.");
         await _db.SaveChangesAsync(ct);
 
         // Dispatch webhook (fire-and-forget)
@@ -260,7 +186,7 @@ public sealed class EventsController : ScopedControllerBase
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
 
-        if (existing is null || !HasClientAccess(existing.ClientId)) return NotFound();
+        if (existing is null || !HasClientAccess(existing.ClientId)) throw new NotFoundException();
 
         // Role gate: Manager+ can edit any; Investigator/Member only their own
         if (!IsSuperAdmin)
@@ -272,11 +198,11 @@ public sealed class EventsController : ScopedControllerBase
             }
             else if (role is "Investigator" or "Member")
             {
-                if (existing.OwnerUserId != CurrentUserId()) return Forbid();
+                if (existing.OwnerUserId != CurrentUserId()) throw new ForbiddenException();
             }
             else
             {
-                return Forbid();
+                throw new ForbiddenException();
             }
         }
 
@@ -286,23 +212,24 @@ public sealed class EventsController : ScopedControllerBase
             req.RootCauseId, req.CorrectiveAction), ct);
 
         var (actorId, actorName) = ResolveActor();
-        var now = DateTimeOffset.UtcNow;
-        var auditEvents = new List<AuditEvent>();
+        var hasAudit = false;
 
         if (existing.EventTypeId != req.EventTypeId)
         {
             var oldType = await _db.EventTypes.AsNoTracking().Where(t => t.Id == existing.EventTypeId).Select(t => t.Name).FirstOrDefaultAsync(ct) ?? existing.EventTypeId.ToString();
             var newType = await _db.EventTypes.AsNoTracking().Where(t => t.Id == req.EventTypeId).Select(t => t.Name).FirstOrDefaultAsync(ct) ?? req.EventTypeId.ToString();
-            auditEvents.Add(NewAudit(existing.Id, existing.ClientId, "type_changed", actorId, actorName,
-                $"Type changed from \"{oldType}\" to \"{newType}\".", now));
+            Audit.Record("event", existing.Id, existing.ClientId, "type_changed",
+                $"Type changed from \"{oldType}\" to \"{newType}\".", actorId, actorName);
+            hasAudit = true;
         }
 
         if (existing.WorkflowStatusId != req.WorkflowStatusId)
         {
             var oldStatus = await _db.WorkflowStatuses.AsNoTracking().Where(s => s.Id == existing.WorkflowStatusId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? existing.WorkflowStatusId.ToString();
             var newStatus = await _db.WorkflowStatuses.AsNoTracking().Where(s => s.Id == req.WorkflowStatusId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? req.WorkflowStatusId.ToString();
-            auditEvents.Add(NewAudit(existing.Id, existing.ClientId, "status_changed", actorId, actorName,
-                $"Status changed from \"{oldStatus}\" to \"{newStatus}\".", now));
+            Audit.Record("event", existing.Id, existing.ClientId, "status_changed",
+                $"Status changed from \"{oldStatus}\" to \"{newStatus}\".", actorId, actorName);
+            hasAudit = true;
         }
 
         if (existing.OwnerUserId != req.OwnerUserId)
@@ -322,14 +249,12 @@ public sealed class EventsController : ScopedControllerBase
                     ? $"Owner assigned to {ownerName}."
                     : $"Owner changed to {ownerName}.";
             }
-            auditEvents.Add(NewAudit(existing.Id, existing.ClientId, "owner_changed", actorId, actorName, body, now));
+            Audit.Record("event", existing.Id, existing.ClientId, "owner_changed", body, actorId, actorName);
+            hasAudit = true;
         }
 
-        if (auditEvents.Count > 0)
-        {
-            _db.AuditEvents.AddRange(auditEvents);
+        if (hasAudit)
             await _db.SaveChangesAsync(ct);
-        }
 
         // Notifications (after save, non-blocking on failure)
         if (existing.WorkflowStatusId != req.WorkflowStatusId && existing.OwnerUserId.HasValue)
@@ -391,8 +316,8 @@ public sealed class EventsController : ScopedControllerBase
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
 
-        if (existing is null || !HasClientAccess(existing.ClientId)) return NotFound();
-        if (!await IsManagerOrAboveAsync(_db, existing.ClientId, User, ct)) return Forbid();
+        if (existing is null || !HasClientAccess(existing.ClientId)) throw new NotFoundException();
+        if (!await IsManagerOrAboveAsync(_db, existing.ClientId, User, ct)) throw new ForbiddenException();
 
         var (actorId, actorName) = ResolveActor();
 
@@ -406,17 +331,8 @@ public sealed class EventsController : ScopedControllerBase
             existing.Description,
             actorId ?? existing.ReportedByUserId), ct);
 
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = existing.ClientId,
-            EntityType      = "event",
-            EntityId        = result.EventId,
-            EventType       = "created",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = $"Duplicated from {existing.PublicId}.",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", result.EventId, existing.ClientId, "created",
+            $"Duplicated from {existing.PublicId}.");
         await _db.SaveChangesAsync(ct);
 
         return Ok(new { publicId = result.PublicId });
@@ -428,12 +344,12 @@ public sealed class EventsController : ScopedControllerBase
         [FromBody] BulkUpdateEventRequest req,
         CancellationToken ct = default)
     {
-        if (req.ClientId == 0) return BadRequest("ClientId is required.");
-        if (!HasClientAccess(req.ClientId)) return NotFound();
-        if (!await IsManagerOrAboveAsync(_db, req.ClientId, User, ct)) return Forbid();
-        if (req.EventIds is null || req.EventIds.Count == 0) return BadRequest("At least one EventId is required.");
+        if (req.ClientId == 0) throw new ValidationException("ClientId is required.");
+        RequireClientAccess(req.ClientId);
+        if (!await IsManagerOrAboveAsync(_db, req.ClientId, User, ct)) throw new ForbiddenException();
+        if (req.EventIds is null || req.EventIds.Count == 0) throw new ValidationException("At least one EventId is required.");
         if (req.WorkflowStatusId is null && req.OwnerUserId is null && !req.ClearOwner)
-            return BadRequest("At least one field to update must be specified.");
+            throw new ValidationException("At least one field to update must be specified.");
 
         var events = await _db.Events
             .Where(e => e.ClientId == req.ClientId && req.EventIds.Contains(e.Id))
@@ -443,7 +359,6 @@ public sealed class EventsController : ScopedControllerBase
 
         var (actorId, actorName) = ResolveActor();
         var now = DateTimeOffset.UtcNow;
-        var auditEvents = new List<AuditEvent>();
 
         string? newStatusName = null;
         if (req.WorkflowStatusId is not null)
@@ -467,14 +382,14 @@ public sealed class EventsController : ScopedControllerBase
                     .Where(s => s.Id == ev.WorkflowStatusId)
                     .Select(s => s.Name)
                     .FirstOrDefaultAsync(ct) ?? ev.WorkflowStatusId.ToString();
-                auditEvents.Add(NewAudit(ev.Id, req.ClientId, "status_changed", actorId, actorName,
-                    $"Status changed from \"{oldStatusName}\" to \"{newStatusName}\".", now));
+                Audit.Record("event", ev.Id, req.ClientId, "status_changed",
+                    $"Status changed from \"{oldStatusName}\" to \"{newStatusName}\".", actorId, actorName);
                 ev.WorkflowStatusId = req.WorkflowStatusId.Value;
             }
 
             if (req.ClearOwner && ev.OwnerUserId is not null)
             {
-                auditEvents.Add(NewAudit(ev.Id, req.ClientId, "owner_changed", actorId, actorName, "Owner unassigned.", now));
+                Audit.Record("event", ev.Id, req.ClientId, "owner_changed", "Owner unassigned.", actorId, actorName);
                 ev.OwnerUserId = null;
             }
             else if (!req.ClearOwner && req.OwnerUserId is not null && ev.OwnerUserId != req.OwnerUserId)
@@ -482,14 +397,13 @@ public sealed class EventsController : ScopedControllerBase
                 var body = ev.OwnerUserId is null
                     ? $"Owner assigned to {ownerDisplayName}."
                     : $"Owner changed to {ownerDisplayName}.";
-                auditEvents.Add(NewAudit(ev.Id, req.ClientId, "owner_changed", actorId, actorName, body, now));
+                Audit.Record("event", ev.Id, req.ClientId, "owner_changed", body, actorId, actorName);
                 ev.OwnerUserId = req.OwnerUserId;
             }
 
             ev.UpdatedAt = now;
         }
 
-        if (auditEvents.Count > 0) _db.AuditEvents.AddRange(auditEvents);
         await _db.SaveChangesAsync(ct);
 
         // Fan out notifications
@@ -515,10 +429,10 @@ public sealed class EventsController : ScopedControllerBase
         [FromBody] BulkDeleteEventRequest req,
         CancellationToken ct = default)
     {
-        if (req.ClientId == 0) return BadRequest("ClientId is required.");
-        if (!HasClientAccess(req.ClientId)) return Forbid();
-        if (!await IsAdminOfClientAsync(_db, req.ClientId, User, ct)) return Forbid();
-        if (req.EventPublicIds is null || req.EventPublicIds.Length == 0) return BadRequest("At least one event ID is required.");
+        if (req.ClientId == 0) throw new ValidationException("ClientId is required.");
+        RequireClientAccess(req.ClientId);
+        if (!await IsAdminOfClientAsync(_db, req.ClientId, User, ct)) throw new ForbiddenException();
+        if (req.EventPublicIds is null || req.EventPublicIds.Length == 0) throw new ValidationException("At least one event ID is required.");
 
         var events = await _db.Events
             .Where(e => e.ClientId == req.ClientId && req.EventPublicIds.Contains(e.PublicId))
@@ -551,8 +465,8 @@ public sealed class EventsController : ScopedControllerBase
         var ev = await _db.Events
             .FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
 
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, ev.ClientId, User, ct)) return Forbid();
+        if (ev is null || !HasClientAccess(ev.ClientId)) throw new NotFoundException();
+        if (!await IsAdminOfClientAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var clientId = ev.ClientId;
         var pid      = ev.PublicId;
@@ -590,18 +504,4 @@ public sealed class EventsController : ScopedControllerBase
             },
         };
 
-    private static AuditEvent NewAudit(
-        long entityId, long clientId, string eventType,
-        long? userId, string userDisplayName, string body, DateTimeOffset createdAt)
-        => new()
-        {
-            ClientId        = clientId,
-            EntityType      = "event",
-            EntityId        = entityId,
-            EventType       = eventType,
-            UserId          = userId,
-            UserDisplayName = userDisplayName,
-            Body            = body,
-            CreatedAt       = createdAt,
-        };
 }

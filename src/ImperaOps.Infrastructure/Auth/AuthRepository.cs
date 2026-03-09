@@ -24,7 +24,7 @@ public sealed class AuthRepository : IAuthRepository
         var clients = await _db.UserClientAccess
             .AsNoTracking()
             .Where(a => a.UserId == user.Id)
-            .Join(_db.Clients.Where(c => c.IsActive),
+            .Join(_db.Clients.Where(c => c.Status != "Inactive"),
                   a => a.ClientId,
                   c => c.Id,
                   (a, c) => new ClientAccessDto(c.Id, c.Name, a.Role, c.ParentClientId))

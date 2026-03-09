@@ -3,6 +3,7 @@ using ImperaOps.Application.Abstractions;
 using ImperaOps.Application.Auth.Commands;
 using ImperaOps.Application.Auth.Dtos;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Email;
 using MediatR;
@@ -73,7 +74,8 @@ public sealed class AuthController : ControllerBase
             var sessionToken = await CreateSessionAsync(creds.UserId, revokeAll: true, ct);
             var jwt = _jwt.GenerateToken(creds.UserId, creds.Email, creds.DisplayName, creds.IsSuperAdmin, creds.Clients, sessionToken);
 
-            return Ok(new AuthResultDto(jwt, creds.DisplayName, creds.Email, creds.IsSuperAdmin, creds.Clients));
+            var activeClientName = await ResolveActiveClientNameAsync(user!.ActiveClientId, creds.Clients, ct);
+            return Ok(new AuthResultDto(jwt, creds.DisplayName, creds.Email, creds.IsSuperAdmin, user.ActiveClientId, activeClientName, creds.Clients));
         }
         catch (UnauthorizedAccessException)
         {
@@ -100,22 +102,22 @@ public sealed class AuthController : ControllerBase
         [FromBody] UpdateProfileRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.DisplayName))
-            return BadRequest("Display name is required.");
+            throw new ValidationException("Display name is required.");
 
         if (string.IsNullOrWhiteSpace(req.Email) || !req.Email.Contains('@'))
-            return BadRequest("A valid email address is required.");
+            throw new ValidationException("A valid email address is required.");
 
         if (!long.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
             return Unauthorized();
 
         var user = await _db.Users.FindAsync([userId], ct);
-        if (user is null) return NotFound();
+        if (user is null) throw new NotFoundException();
 
         var normalizedEmail = req.Email.Trim().ToLowerInvariant();
         if (!string.Equals(user.Email, normalizedEmail, StringComparison.Ordinal))
         {
             var taken = await _db.Users.AnyAsync(u => u.Email == normalizedEmail && u.Id != userId, ct);
-            if (taken) return BadRequest("That email address is already in use.");
+            if (taken) throw new ValidationException("That email address is already in use.");
         }
 
         user.DisplayName = req.DisplayName.Trim();
@@ -132,19 +134,19 @@ public sealed class AuthController : ControllerBase
         [FromBody] ChangePasswordRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.CurrentPassword))
-            return BadRequest("Current password is required.");
+            throw new ValidationException("Current password is required.");
 
         if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 8)
-            return BadRequest("New password must be at least 8 characters.");
+            throw new ValidationException("New password must be at least 8 characters.");
 
         if (!long.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
             return Unauthorized();
 
         var user = await _db.Users.FindAsync([userId], ct);
-        if (user is null) return NotFound();
+        if (user is null) throw new NotFoundException();
 
         if (!BCrypt.Net.BCrypt.Verify(req.CurrentPassword, user.PasswordHash))
-            return BadRequest("Current password is incorrect.");
+            throw new ValidationException("Current password is incorrect.");
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
         await _db.SaveChangesAsync(ct);
@@ -215,18 +217,18 @@ public sealed class AuthController : ControllerBase
         [FromBody] SetPasswordRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Token))
-            return BadRequest("Token is required.");
+            throw new ValidationException("Token is required.");
         if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 8)
-            return BadRequest("Password must be at least 8 characters.");
+            throw new ValidationException("Password must be at least 8 characters.");
 
         var record = await _db.UserTokens
             .FirstOrDefaultAsync(t => t.Token == req.Token, ct);
 
         if (record is null || record.UsedAt.HasValue || record.ExpiresAt < DateTimeOffset.UtcNow)
-            return BadRequest("This link is invalid or has expired.");
+            throw new ValidationException("This link is invalid or has expired.");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == record.UserId, ct);
-        if (user is null) return BadRequest("User not found.");
+        if (user is null) throw new ValidationException("User not found.");
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
         user.IsActive     = true; // Ensure invited users are active
@@ -237,7 +239,7 @@ public sealed class AuthController : ControllerBase
         var clients = await _db.UserClientAccess
             .AsNoTracking()
             .Where(a => a.UserId == user.Id)
-            .Join(_db.Clients.Where(c => c.IsActive),
+            .Join(_db.Clients.Where(c => c.Status != "Inactive"),
                   a => a.ClientId,
                   c => c.Id,
                   (a, c) => new ClientAccessDto(c.Id, c.Name, a.Role, c.ParentClientId))
@@ -246,10 +248,43 @@ public sealed class AuthController : ControllerBase
         var sessionToken = await CreateSessionAsync(user.Id, revokeAll: true, ct);
         var jwtToken = _jwt.GenerateToken(user.Id, user.Email, user.DisplayName, user.IsSuperAdmin, clients, sessionToken);
 
-        return Ok(new AuthResultDto(jwtToken, user.DisplayName, user.Email, user.IsSuperAdmin, clients));
+        var activeClientName = await ResolveActiveClientNameAsync(user.ActiveClientId, clients, ct);
+        return Ok(new AuthResultDto(jwtToken, user.DisplayName, user.Email, user.IsSuperAdmin, user.ActiveClientId, activeClientName, clients));
+    }
+
+    /// <summary>Persists the user's active (selected) client so it survives logouts and device changes.</summary>
+    [Authorize]
+    [HttpPut("active-client")]
+    public async Task<IActionResult> SetActiveClient(
+        [FromBody] SetActiveClientRequest req, CancellationToken ct)
+    {
+        if (!long.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            return Unauthorized();
+
+        var user = await _db.Users.FindAsync([userId], ct);
+        if (user is null) throw new NotFoundException();
+
+        user.ActiveClientId = req.ClientId;
+        await _db.SaveChangesAsync(ct);
+
+        return NoContent();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private async Task<string?> ResolveActiveClientNameAsync(
+        long? activeClientId, IReadOnlyList<ClientAccessDto> clients, CancellationToken ct)
+    {
+        if (!activeClientId.HasValue) return null;
+        // Check if it's already in the user's client list
+        var existing = clients.FirstOrDefault(c => c.Id == activeClientId.Value);
+        if (existing is not null) return existing.Name;
+        // Super admin viewing a client they don't have explicit access to — query DB
+        return await _db.Clients
+            .Where(c => c.Id == activeClientId.Value)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync(ct);
+    }
 
     /// <summary>Optionally revokes all existing sessions then creates a fresh Session token. Returns the new token value.</summary>
     private async Task<string> CreateSessionAsync(long userId, bool revokeAll, CancellationToken ct)
@@ -291,3 +326,4 @@ public sealed record UpdateProfileRequest(string DisplayName, string Email);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ForgotPasswordRequest(string Email);
 public sealed record SetPasswordRequest(string Token, string NewPassword);
+public sealed record SetActiveClientRequest(long ClientId);

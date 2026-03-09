@@ -1,5 +1,6 @@
 using ImperaOps.Api.Contracts;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,12 +21,15 @@ public sealed class EventTypesController : ScopedControllerBase
     public async Task<ActionResult<IReadOnlyList<EventTypeDto>>> GetEventTypes(
         [FromQuery] long clientId, CancellationToken ct)
     {
-        if (clientId == 0) return BadRequest("clientId is required.");
-        if (!HasClientAccess(clientId)) return NotFound();
+        if (clientId == 0) throw new ValidationException("clientId is required.");
+        RequireClientAccess(clientId);
+
+        var hasClientTypes = await _db.EventTypes
+            .AnyAsync(t => t.ClientId == clientId && t.IsActive, ct);
 
         var rows = await _db.EventTypes
             .AsNoTracking()
-            .Where(t => (t.ClientId == 0 || t.ClientId == clientId) && t.IsActive)
+            .Where(t => (hasClientTypes ? t.ClientId == clientId : (t.ClientId == 0 || t.ClientId == clientId)) && t.IsActive)
             .OrderBy(t => t.SortOrder).ThenBy(t => t.Name)
             .ToListAsync(ct);
 
@@ -47,12 +51,12 @@ public sealed class EventTypesController : ScopedControllerBase
     public async Task<ActionResult<EventTypeDto>> CreateEventType(
         [FromBody] CreateEventTypeRequest req, CancellationToken ct)
     {
-        if (req.ClientId == 0)                    return BadRequest("clientId is required.");
-        if (!HasClientAccess(req.ClientId))        return NotFound();
-        if (string.IsNullOrWhiteSpace(req.Name))  return BadRequest("Name is required.");
+        if (req.ClientId == 0)                    throw new ValidationException("clientId is required.");
+        RequireClientAccess(req.ClientId);
+        if (string.IsNullOrWhiteSpace(req.Name))  throw new ValidationException("Name is required.");
 
         var maxOrder = await _db.EventTypes
-            .Where(t => t.ClientId == req.ClientId || t.ClientId == 0)
+            .Where(t => t.ClientId == req.ClientId)
             .Select(t => (int?)t.SortOrder)
             .MaxAsync(ct) ?? 0;
 
@@ -80,11 +84,11 @@ public sealed class EventTypesController : ScopedControllerBase
         long id, [FromBody] UpdateEventTypeRequest req, CancellationToken ct)
     {
         var type = await _db.EventTypes.FindAsync([id], ct);
-        if (type is null || !HasClientAccess(type.ClientId)) return NotFound();
-        if (type.IsSystem) return StatusCode(403, "System rows cannot be edited.");
-        if (type.ClientId != req.ClientId) return StatusCode(403, "ClientId mismatch.");
+        if (type is null || !HasClientAccess(type.ClientId)) throw new NotFoundException();
+        if (type.IsSystem) throw new ForbiddenException("System rows cannot be edited.");
+        if (type.ClientId != req.ClientId) throw new ForbiddenException("ClientId mismatch.");
 
-        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Name is required.");
+        if (string.IsNullOrWhiteSpace(req.Name)) throw new ValidationException("Name is required.");
 
         type.Name      = req.Name.Trim();
         type.SortOrder = req.SortOrder;
@@ -99,16 +103,16 @@ public sealed class EventTypesController : ScopedControllerBase
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> DeleteEventType(long id, [FromQuery] long clientId, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
+        RequireClientAccess(clientId);
 
         var type = await _db.EventTypes.FindAsync([id], ct);
-        if (type is null) return NotFound();
-        if (type.IsSystem) return StatusCode(403, "System rows cannot be deleted.");
-        if (type.ClientId != clientId) return StatusCode(403, "ClientId mismatch.");
+        if (type is null) throw new NotFoundException();
+        if (type.IsSystem) throw new ForbiddenException("System rows cannot be deleted.");
+        if (type.ClientId != clientId) throw new ForbiddenException("ClientId mismatch.");
 
         var count = await _db.Events.CountAsync(e => e.ClientId == clientId && e.EventTypeId == id, ct);
         if (count > 0)
-            return Conflict($"Cannot delete: {count} event(s) use this type.");
+            throw new ConflictException($"Cannot delete: {count} event(s) use this type.");
 
         type.DeletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

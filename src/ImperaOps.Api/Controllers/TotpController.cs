@@ -2,6 +2,7 @@ using BCrypt.Net;
 using ImperaOps.Application.Abstractions;
 using ImperaOps.Application.Auth.Dtos;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Auth;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -21,15 +22,17 @@ public sealed class TotpController : ControllerBase
     private readonly ITotpService       _totp;
     private readonly IJwtService        _jwt;
     private readonly IConfiguration     _config;
+    private readonly IAuditService      _audit;
 
     public TotpController(
         ImperaOpsDbContext db, ITotpService totp,
-        IJwtService jwt, IConfiguration config)
+        IJwtService jwt, IConfiguration config, IAuditService audit)
     {
         _db     = db;
         _totp   = totp;
         _jwt    = jwt;
         _config = config;
+        _audit  = audit;
     }
 
     // ── GET /api/v1/auth/totp/status ─────────────────────────────────────────
@@ -42,7 +45,7 @@ public sealed class TotpController : ControllerBase
             return Unauthorized();
 
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is null) return NotFound();
+        if (user is null) throw new NotFoundException();
 
         return Ok(new { isTotpEnabled = user.IsTotpEnabled });
     }
@@ -57,7 +60,7 @@ public sealed class TotpController : ControllerBase
             return Unauthorized();
 
         var user = await _db.Users.FindAsync([userId], ct);
-        if (user is null) return NotFound();
+        if (user is null) throw new NotFoundException();
 
         var secret    = _totp.GenerateSecret();
         var issuer    = _config["App:Name"] ?? "ImperaOps";
@@ -81,17 +84,18 @@ public sealed class TotpController : ControllerBase
             return Unauthorized();
 
         var user = await _db.Users.FindAsync([userId], ct);
-        if (user is null) return NotFound();
+        if (user is null) throw new NotFoundException();
 
         if (string.IsNullOrWhiteSpace(user.TotpSecret))
-            return BadRequest("TOTP setup has not been initiated. Call /setup first.");
+            throw new ValidationException("TOTP setup has not been initiated. Call /setup first.");
 
         if (!_totp.Validate(user.TotpSecret, req.Code))
-            return BadRequest("Invalid code. Please try again.");
+            throw new ValidationException("Invalid code. Please try again.");
 
         user.IsTotpEnabled = true;
-        _db.AuditEvents.Add(MakeAudit(userId, user.DisplayName, "user", userId, "totp_enabled",
-            $"TOTP two-factor authentication enabled by \"{user.DisplayName}\" ({user.Email})."));
+        _audit.Record("user", userId, 0, "totp_enabled",
+            $"TOTP two-factor authentication enabled by \"{user.DisplayName}\" ({user.Email}).",
+            userId, user.DisplayName);
         await _db.SaveChangesAsync(ct);
 
         return NoContent();
@@ -108,15 +112,16 @@ public sealed class TotpController : ControllerBase
             return Unauthorized();
 
         var user = await _db.Users.FindAsync([userId], ct);
-        if (user is null) return NotFound();
+        if (user is null) throw new NotFoundException();
 
         if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
-            return BadRequest("Password is incorrect.");
+            throw new ValidationException("Password is incorrect.");
 
         user.TotpSecret    = null;
         user.IsTotpEnabled = false;
-        _db.AuditEvents.Add(MakeAudit(userId, user.DisplayName, "user", userId, "totp_disabled",
-            $"TOTP two-factor authentication disabled by \"{user.DisplayName}\" ({user.Email})."));
+        _audit.Record("user", userId, 0, "totp_disabled",
+            $"TOTP two-factor authentication disabled by \"{user.DisplayName}\" ({user.Email}).",
+            userId, user.DisplayName);
         await _db.SaveChangesAsync(ct);
 
         return NoContent();
@@ -129,7 +134,7 @@ public sealed class TotpController : ControllerBase
         [FromBody] TotpChallengeRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.PendingToken) || string.IsNullOrWhiteSpace(req.Code))
-            return BadRequest("pendingToken and code are required.");
+            throw new ValidationException("pendingToken and code are required.");
 
         var tokenRecord = await _db.UserTokens
             .FirstOrDefaultAsync(t => t.Token == req.PendingToken && t.Type == "TotpChallenge", ct);
@@ -151,7 +156,7 @@ public sealed class TotpController : ControllerBase
         var clients = await _db.UserClientAccess
             .AsNoTracking()
             .Where(a => a.UserId == user.Id)
-            .Join(_db.Clients.Where(c => c.IsActive),
+            .Join(_db.Clients.Where(c => c.Status != "Inactive"),
                   a => a.ClientId,
                   c => c.Id,
                   (a, c) => new Application.Auth.Dtos.ClientAccessDto(c.Id, c.Name, a.Role, c.ParentClientId))
@@ -179,27 +184,14 @@ public sealed class TotpController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         var jwt = _jwt.GenerateToken(user.Id, user.Email, user.DisplayName, user.IsSuperAdmin, clients, sessionToken);
-        return Ok(new AuthResultDto(jwt, user.DisplayName, user.Email, user.IsSuperAdmin, clients));
+        var activeClientName = user.ActiveClientId.HasValue
+            ? (clients.FirstOrDefault(c => c.Id == user.ActiveClientId.Value)?.Name
+               ?? await _db.Clients.Where(c => c.Id == user.ActiveClientId.Value).Select(c => c.Name).FirstOrDefaultAsync(ct))
+            : null;
+        return Ok(new AuthResultDto(jwt, user.DisplayName, user.Email, user.IsSuperAdmin, user.ActiveClientId, activeClientName, clients));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
-
-    private static AuditEvent MakeAudit(
-        long userId, string displayName,
-        string entityType, long entityId, string eventType, string body)
-    {
-        return new AuditEvent
-        {
-            EntityType      = entityType,
-            EntityId        = entityId,
-            ClientId        = 0,
-            EventType       = eventType,
-            UserId          = userId,
-            UserDisplayName = displayName,
-            Body            = body,
-            CreatedAt       = DateTimeOffset.UtcNow,
-        };
-    }
 
     private static string GenerateToken()
     {

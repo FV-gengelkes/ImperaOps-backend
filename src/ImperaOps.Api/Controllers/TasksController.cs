@@ -2,6 +2,7 @@ using ImperaOps.Api.Contracts;
 using ImperaOps.Application.Abstractions;
 using ImperaOps.Application.Tasks;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Notifications;
 using MediatR;
@@ -31,7 +32,8 @@ public sealed class TasksController : ScopedControllerBase
         string publicId, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
 
         var tasks = await _db.Tasks
             .AsNoTracking()
@@ -57,28 +59,19 @@ public sealed class TasksController : ScopedControllerBase
     public async Task<ActionResult<TaskDto>> CreateTask(
         string publicId, [FromBody] CreateTaskRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest("Title is required.");
+        if (string.IsNullOrWhiteSpace(req.Title)) throw new ValidationException("Title is required.");
 
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
-        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) return Forbid();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
+        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var result = await _mediator.Send(new CreateTaskCommand(
             ev.ClientId, ev.Id, req.Title, req.Description,
             req.AssignedToUserId, req.DueAt), ct);
 
         var (actorId, actorName) = ResolveActor();
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = ev.ClientId,
-            EntityType      = "event",
-            EntityId        = ev.Id,
-            EventType       = "task_added",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = $"Task added: {req.Title}.",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", ev.Id, ev.ClientId, "task_added", $"Task added: {req.Title}.");
         await _db.SaveChangesAsync(ct);
 
         if (req.AssignedToUserId.HasValue)
@@ -98,14 +91,15 @@ public sealed class TasksController : ScopedControllerBase
         string publicId, string taskPublicId, [FromBody] UpdateTaskRequest req, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
-        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) return Forbid();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
+        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
             .FirstOrDefaultAsync(t => t.EventId == ev.Id && t.PublicId == taskPublicId, ct);
-        if (task is null) return NotFound();
+        if (task is null) throw new NotFoundException();
 
-        if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest("Title is required.");
+        if (string.IsNullOrWhiteSpace(req.Title)) throw new ValidationException("Title is required.");
 
         var (actorId, actorName) = ResolveActor();
 
@@ -133,27 +127,17 @@ public sealed class TasksController : ScopedControllerBase
         string publicId, string taskPublicId, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
-        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) return Forbid();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
+        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
             .FirstOrDefaultAsync(t => t.EventId == ev.Id && t.PublicId == taskPublicId, ct);
-        if (task is null) return NotFound();
+        if (task is null) throw new NotFoundException();
 
         await _mediator.Send(new CompleteTaskCommand(task.Id), ct);
 
-        var (actorId, actorName) = ResolveActor();
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = ev.ClientId,
-            EntityType      = "event",
-            EntityId        = ev.Id,
-            EventType       = "task_completed",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = $"Task completed: {task.Title}.",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", ev.Id, ev.ClientId, "task_completed", $"Task completed: {task.Title}.");
         await _db.SaveChangesAsync(ct);
 
         return NoContent();
@@ -165,27 +149,17 @@ public sealed class TasksController : ScopedControllerBase
         string publicId, string taskPublicId, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
-        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) return Forbid();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
+        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
             .FirstOrDefaultAsync(t => t.EventId == ev.Id && t.PublicId == taskPublicId, ct);
-        if (task is null) return NotFound();
+        if (task is null) throw new NotFoundException();
 
         await _mediator.Send(new UncompleteTaskCommand(task.Id), ct);
 
-        var (actorId, actorName) = ResolveActor();
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = ev.ClientId,
-            EntityType      = "event",
-            EntityId        = ev.Id,
-            EventType       = "task_reopened",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = $"Task reopened: {task.Title}.",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", ev.Id, ev.ClientId, "task_reopened", $"Task reopened: {task.Title}.");
         await _db.SaveChangesAsync(ct);
 
         return NoContent();
@@ -197,7 +171,8 @@ public sealed class TasksController : ScopedControllerBase
         string publicId, [FromBody] ReorderTasksRequest req, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
 
         var tasks = await _db.Tasks
             .Where(t => t.EventId == ev.Id)
@@ -220,29 +195,18 @@ public sealed class TasksController : ScopedControllerBase
         string publicId, string taskPublicId, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
-        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) return Forbid();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
+        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
             .FirstOrDefaultAsync(t => t.EventId == ev.Id && t.PublicId == taskPublicId, ct);
-        if (task is null) return NotFound();
-
-        var (actorId, actorName) = ResolveActor();
+        if (task is null) throw new NotFoundException();
 
         await _mediator.Send(new DeleteTaskCommand(task.Id), ct);
         await _notifications.ClearTaskNotificationAsync(taskPublicId, ct);
 
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = ev.ClientId,
-            EntityType      = "event",
-            EntityId        = ev.Id,
-            EventType       = "task_removed",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = $"Task removed: {task.Title}.",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", ev.Id, ev.ClientId, "task_removed", $"Task removed: {task.Title}.");
         await _db.SaveChangesAsync(ct);
 
         return NoContent();

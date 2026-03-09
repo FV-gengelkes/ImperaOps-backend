@@ -1,4 +1,5 @@
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,8 +28,8 @@ public sealed class ClientWebhooksController : ScopedControllerBase
     public async Task<ActionResult<IReadOnlyList<WebhookDto>>> List(
         long clientId, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
 
         var items = await _db.ClientWebhooks
             .AsNoTracking()
@@ -44,10 +45,10 @@ public sealed class ClientWebhooksController : ScopedControllerBase
     public async Task<ActionResult<WebhookDto>> Create(
         long clientId, [FromBody] CreateWebhookRequest req, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.Name))  return BadRequest("Name is required.");
-        if (string.IsNullOrWhiteSpace(req.Url))   return BadRequest("Url is required.");
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.Name))  throw new ValidationException("Name is required.");
+        if (string.IsNullOrWhiteSpace(req.Url))   throw new ValidationException("Url is required.");
 
         var now = DateTimeOffset.UtcNow;
         var webhook = new ClientWebhook
@@ -72,14 +73,14 @@ public sealed class ClientWebhooksController : ScopedControllerBase
     public async Task<ActionResult<WebhookDto>> Update(
         long clientId, long id, [FromBody] UpdateWebhookRequest req, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
 
         var webhook = await _db.ClientWebhooks.FirstOrDefaultAsync(w => w.Id == id && w.ClientId == clientId, ct);
-        if (webhook is null) return NotFound();
+        if (webhook is null) throw new NotFoundException();
 
-        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Name is required.");
-        if (string.IsNullOrWhiteSpace(req.Url))  return BadRequest("Url is required.");
+        if (string.IsNullOrWhiteSpace(req.Name)) throw new ValidationException("Name is required.");
+        if (string.IsNullOrWhiteSpace(req.Url))  throw new ValidationException("Url is required.");
 
         webhook.Name       = req.Name.Trim();
         webhook.Url        = req.Url.Trim();
@@ -97,11 +98,11 @@ public sealed class ClientWebhooksController : ScopedControllerBase
     public async Task<IActionResult> Delete(
         long clientId, long id, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
 
         var webhook = await _db.ClientWebhooks.FirstOrDefaultAsync(w => w.Id == id && w.ClientId == clientId, ct);
-        if (webhook is null) return NotFound();
+        if (webhook is null) throw new NotFoundException();
 
         webhook.DeletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

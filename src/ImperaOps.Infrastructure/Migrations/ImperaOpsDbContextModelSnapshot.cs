@@ -33,6 +33,9 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -86,6 +89,9 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasColumnType("varchar(255)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetime(6)");
 
                     b.Property<long>("EntityId")
@@ -142,6 +148,9 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<long>("EntityId")
                         .HasColumnType("bigint");
 
@@ -181,25 +190,8 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<string>("AppliedTemplateIds")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("LogoStorageKey")
-                        .HasMaxLength(500)
-                        .HasColumnType("varchar(500)");
-
-                    b.Property<string>("PrimaryColor")
-                        .HasMaxLength(7)
-                        .HasColumnType("varchar(7)");
-
-                    b.Property<string>("SystemName")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
-
-                    b.Property<string>("LinkColor")
-                        .HasMaxLength(7)
-                        .HasColumnType("varchar(7)");
-
-                    b.Property<string>("InboundEmailSlug")
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)");
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<long?>("DefaultInboundEventTypeId")
                         .HasColumnType("bigint");
@@ -207,11 +199,20 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<long?>("DefaultInboundWorkflowStatusId")
                         .HasColumnType("bigint");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
+                    b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("tinyint(1)");
+                    b.Property<string>("InboundEmailSlug")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("LinkColor")
+                        .HasMaxLength(7)
+                        .HasColumnType("varchar(7)");
+
+                    b.Property<string>("LogoStorageKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -221,8 +222,20 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<long?>("ParentClientId")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("PrimaryColor")
+                        .HasMaxLength(7)
+                        .HasColumnType("varchar(7)");
+
                     b.Property<string>("Slug")
                         .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("SystemName")
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
 
@@ -248,12 +261,132 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<long>("Value")
                         .HasColumnType("bigint");
 
                     b.HasKey("ClientId", "CounterName");
 
                     b.ToTable("ClientCounters", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.ClientDocument", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("varchar(300)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UploadedByDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("varchar(128)");
+
+                    b.Property<long?>("UploadedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "Category");
+
+                    b.ToTable("ClientDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.ClientWebhook", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("EventTypes")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("Secret")
+                        .HasMaxLength(256)
+                        .HasColumnType("varchar(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("ClientWebhooks", (string)null);
                 });
 
             modelBuilder.Entity("ImperaOps.Domain.Entities.CustomField", b =>
@@ -274,6 +407,9 @@ namespace ImperaOps.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
@@ -316,6 +452,9 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<long>("CustomFieldId")
                         .HasColumnType("bigint");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<long>("EntityId")
                         .HasColumnType("bigint");
 
@@ -334,7 +473,7 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.ToTable("CustomFieldValues", (string)null);
                 });
 
-            modelBuilder.Entity("ImperaOps.Domain.Entities.Event", b =>
+            modelBuilder.Entity("ImperaOps.Domain.Entities.DocumentReference", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -348,12 +487,69 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<long?>("CreatedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long>("DocumentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("EntityId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentId");
+
+                    b.HasIndex("EntityType", "EntityId");
+
+                    b.HasIndex("DocumentId", "EntityType", "EntityId")
+                        .IsUnique();
+
+                    b.ToTable("DocumentReferences", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.Event", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CorrectiveAction")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("longtext");
 
                     b.Property<long>("EventTypeId")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("ExternalReporterContact")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("ExternalReporterName")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
 
                     b.Property<string>("Location")
                         .IsRequired()
@@ -377,19 +573,8 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<long?>("ReportedByUserId")
                         .HasColumnType("bigint");
 
-                    b.Property<string>("ExternalReporterName")
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<string>("ExternalReporterContact")
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
                     b.Property<long?>("RootCauseId")
                         .HasColumnType("bigint");
-
-                    b.Property<string>("CorrectiveAction")
-                        .HasColumnType("longtext");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -404,6 +589,8 @@ namespace ImperaOps.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DeletedAt");
+
                     b.HasIndex("ClientId", "OccurredAt");
 
                     b.HasIndex("ClientId", "PublicId")
@@ -412,9 +599,78 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.HasIndex("ClientId", "ReferenceNumber")
                         .IsUnique();
 
-                    b.HasIndex("RootCauseId");
-
                     b.ToTable("Events", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.EventLink", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long>("EventId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("LinkGroupId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "LinkGroupId");
+
+                    b.HasIndex("LinkGroupId", "EventId")
+                        .IsUnique();
+
+                    b.ToTable("EventLinks", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.EventLinkGroup", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("CreatedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("EventLinkGroups", (string)null);
                 });
 
             modelBuilder.Entity("ImperaOps.Domain.Entities.EventTask", b =>
@@ -432,6 +688,9 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetime(6)");
 
                     b.Property<string>("Description")
@@ -464,6 +723,8 @@ namespace ImperaOps.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("DeletedAt");
+
                     b.HasIndex("EventId", "SortOrder");
 
                     b.ToTable("Tasks", (string)null);
@@ -481,6 +742,9 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetime(6)");
 
                     b.Property<bool>("IsActive")
@@ -507,6 +771,235 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.ToTable("EventTypes", (string)null);
                 });
 
+            modelBuilder.Entity("ImperaOps.Domain.Entities.InsightAlert", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("AcknowledgedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("AcknowledgedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("AiSummary")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("AlertType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset>("GeneratedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<bool>("IsAcknowledged")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("RelatedEventIds")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId", "IsAcknowledged");
+
+                    b.HasIndex("ClientId", "AlertType", "GeneratedAt");
+
+                    b.ToTable("InsightAlerts", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.Investigation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("CorrectiveActions")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("CreatedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long>("EventId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("LeadInvestigatorUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RootCauseAnalysis")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId")
+                        .IsUnique();
+
+                    b.HasIndex("ClientId", "Status");
+
+                    b.ToTable("Investigations", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.InvestigationEvidence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("AttachmentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("CollectedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("CollectedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("EvidenceType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<long>("InvestigationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvestigationId", "SortOrder");
+
+                    b.ToTable("InvestigationEvidence", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.InvestigationWitness", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long>("InvestigationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("RecordedByUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Statement")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.Property<DateTimeOffset?>("StatementDate")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("WitnessContact")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("WitnessName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvestigationId", "SortOrder");
+
+                    b.ToTable("InvestigationWitnesses", (string)null);
+                });
+
             modelBuilder.Entity("ImperaOps.Domain.Entities.Notification", b =>
                 {
                     b.Property<long>("Id")
@@ -525,11 +1018,10 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("EntityPublicId")
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)");
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
 
-                    b.Property<string>("SubEntityPublicId")
+                    b.Property<string>("EntityPublicId")
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)");
 
@@ -541,6 +1033,10 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("varchar(50)");
 
+                    b.Property<string>("SubEntityPublicId")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -550,6 +1046,8 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DeletedAt");
 
                     b.HasIndex("UserId", "CreatedAt");
 
@@ -565,6 +1063,9 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasColumnType("bigint");
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<bool>("EmailEnabled")
                         .HasColumnType("tinyint(1)");
@@ -588,6 +1089,76 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.ToTable("NotificationPreferences", (string)null);
                 });
 
+            modelBuilder.Entity("ImperaOps.Domain.Entities.RootCauseTaxonomyItem", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("RootCauseTaxonomyItems", (string)null);
+                });
+
+            modelBuilder.Entity("ImperaOps.Domain.Entities.SlaRule", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ClientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("ClosureHours")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("EventTypeId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("InvestigationHours")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.ToTable("SlaRules", (string)null);
+                });
+
             modelBuilder.Entity("ImperaOps.Domain.Entities.UserClientAccess", b =>
                 {
                     b.Property<long>("UserId")
@@ -595,6 +1166,9 @@ namespace ImperaOps.Infrastructure.Migrations
 
                     b.Property<long>("ClientId")
                         .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<DateTimeOffset>("GrantedAt")
                         .HasColumnType("datetime(6)");
@@ -619,6 +1193,13 @@ namespace ImperaOps.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
 
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("datetime(6)");
@@ -667,6 +1248,9 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
@@ -694,70 +1278,6 @@ namespace ImperaOps.Infrastructure.Migrations
                     b.ToTable("WorkflowStatuses", (string)null);
                 });
 
-            modelBuilder.Entity("ImperaOps.Domain.Entities.RootCauseTaxonomyItem", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("ClientId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.ToTable("RootCauseTaxonomyItems", (string)null);
-                });
-
-            modelBuilder.Entity("ImperaOps.Domain.Entities.SlaRule", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("ClientId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long?>("EventTypeId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
-                    b.Property<int?>("InvestigationHours")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ClosureHours")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetime(6)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.ToTable("SlaRules", (string)null);
-                });
-
             modelBuilder.Entity("ImperaOps.Domain.Entities.WorkflowTransition", b =>
                 {
                     b.Property<long>("Id")
@@ -770,6 +1290,9 @@ namespace ImperaOps.Infrastructure.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("datetime(6)");
 
                     b.Property<long?>("EventTypeId")

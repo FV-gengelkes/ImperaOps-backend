@@ -7,6 +7,8 @@ public sealed record AuthResultDto(
     string DisplayName,
     string Email,
     bool IsSuperAdmin,
+    long? ActiveClientId,
+    string? ActiveClientName,
     IReadOnlyList<ClientAccessDto> Clients
 );
 

@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ImperaOps.Application.Abstractions;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,17 +17,20 @@ public sealed class WebhookController : ControllerBase
     private readonly ICounterService _counter;
     private readonly IEventRepository _repo;
     private readonly IConfiguration _config;
+    private readonly IAuditService _audit;
 
     public WebhookController(
         ImperaOpsDbContext db,
         ICounterService counter,
         IEventRepository repo,
-        IConfiguration config)
+        IConfiguration config,
+        IAuditService audit)
     {
         _db      = db;
         _counter = counter;
         _repo    = repo;
         _config  = config;
+        _audit   = audit;
     }
 
     // ── POST /api/v1/webhooks/email ────────────────────────────────────────────
@@ -37,7 +41,7 @@ public sealed class WebhookController : ControllerBase
         [FromBody] ResendInboundPayload payload,
         CancellationToken ct)
     {
-        if (payload is null) return BadRequest("Empty payload.");
+        if (payload is null) throw new ValidationException("Empty payload.");
 
         var inboundDomain = _config["App:InboundDomain"] ?? "";
 
@@ -59,7 +63,7 @@ public sealed class WebhookController : ControllerBase
         // ── 2. Look up client by InboundEmailSlug ──────────────────────────────
         var client = await _db.Clients
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.InboundEmailSlug == inboundSlug && c.IsActive, ct);
+            .FirstOrDefaultAsync(c => c.InboundEmailSlug == inboundSlug && c.Status != "Inactive", ct);
 
         if (client is null)
             return Ok(new { skipped = true, reason = "No client found for inbound slug." });
@@ -143,17 +147,9 @@ public sealed class WebhookController : ControllerBase
 
         var eventId = await _repo.CreateAsync(ev, ct);
 
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = client.Id,
-            EntityType      = "event",
-            EntityId        = eventId,
-            EventType       = "created",
-            UserId          = null,
-            UserDisplayName = reporterName ?? "Email",
-            Body            = "Event created via inbound email.",
-            CreatedAt       = now,
-        });
+        _audit.Record("event", eventId, client.Id, "created",
+            "Event created via inbound email.",
+            null, reporterName ?? "Email");
         await _db.SaveChangesAsync(ct);
 
         return Ok(new { publicId });

@@ -1,5 +1,6 @@
 using ImperaOps.Api.Contracts;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,12 +21,15 @@ public sealed class WorkflowStatusesController : ScopedControllerBase
     public async Task<ActionResult<IReadOnlyList<WorkflowStatusDto>>> GetStatuses(
         [FromQuery] long clientId, CancellationToken ct)
     {
-        if (clientId == 0) return BadRequest("clientId is required.");
-        if (!HasClientAccess(clientId)) return NotFound();
+        if (clientId == 0) throw new ValidationException("clientId is required.");
+        RequireClientAccess(clientId);
+
+        var hasClientStatuses = await _db.WorkflowStatuses
+            .AnyAsync(s => s.ClientId == clientId && s.IsActive, ct);
 
         var rows = await _db.WorkflowStatuses
             .AsNoTracking()
-            .Where(s => (s.ClientId == 0 || s.ClientId == clientId) && s.IsActive)
+            .Where(s => (hasClientStatuses ? s.ClientId == clientId : (s.ClientId == 0 || s.ClientId == clientId)) && s.IsActive)
             .OrderBy(s => s.SortOrder).ThenBy(s => s.Name)
             .ToListAsync(ct);
 
@@ -47,12 +51,12 @@ public sealed class WorkflowStatusesController : ScopedControllerBase
     public async Task<ActionResult<WorkflowStatusDto>> CreateStatus(
         [FromBody] CreateWorkflowStatusRequest req, CancellationToken ct)
     {
-        if (req.ClientId == 0)                    return BadRequest("clientId is required.");
-        if (!HasClientAccess(req.ClientId))        return NotFound();
-        if (string.IsNullOrWhiteSpace(req.Name))  return BadRequest("Name is required.");
+        if (req.ClientId == 0)                    throw new ValidationException("clientId is required.");
+        RequireClientAccess(req.ClientId);
+        if (string.IsNullOrWhiteSpace(req.Name))  throw new ValidationException("Name is required.");
 
         var maxOrder = await _db.WorkflowStatuses
-            .Where(s => s.ClientId == req.ClientId || s.ClientId == 0)
+            .Where(s => s.ClientId == req.ClientId)
             .Select(s => (int?)s.SortOrder)
             .MaxAsync(ct) ?? 0;
 
@@ -83,11 +87,11 @@ public sealed class WorkflowStatusesController : ScopedControllerBase
         long id, [FromBody] UpdateWorkflowStatusRequest req, CancellationToken ct)
     {
         var status = await _db.WorkflowStatuses.FindAsync([id], ct);
-        if (status is null || !HasClientAccess(status.ClientId)) return NotFound();
-        if (status.IsSystem) return StatusCode(403, "System rows cannot be edited.");
-        if (status.ClientId != req.ClientId) return StatusCode(403, "ClientId mismatch.");
+        if (status is null || !HasClientAccess(status.ClientId)) throw new NotFoundException();
+        if (status.IsSystem) throw new ForbiddenException("System rows cannot be edited.");
+        if (status.ClientId != req.ClientId) throw new ForbiddenException("ClientId mismatch.");
 
-        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Name is required.");
+        if (string.IsNullOrWhiteSpace(req.Name)) throw new ValidationException("Name is required.");
 
         status.Name      = req.Name.Trim();
         status.Color     = req.Color;
@@ -104,16 +108,16 @@ public sealed class WorkflowStatusesController : ScopedControllerBase
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> DeleteStatus(long id, [FromQuery] long clientId, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
+        RequireClientAccess(clientId);
 
         var status = await _db.WorkflowStatuses.FindAsync([id], ct);
-        if (status is null) return NotFound();
-        if (status.IsSystem) return StatusCode(403, "System rows cannot be deleted.");
-        if (status.ClientId != clientId) return StatusCode(403, "ClientId mismatch.");
+        if (status is null) throw new NotFoundException();
+        if (status.IsSystem) throw new ForbiddenException("System rows cannot be deleted.");
+        if (status.ClientId != clientId) throw new ForbiddenException("ClientId mismatch.");
 
         var count = await _db.Events.CountAsync(e => e.ClientId == clientId && e.WorkflowStatusId == id, ct);
         if (count > 0)
-            return Conflict($"Cannot delete: {count} event(s) use this status.");
+            throw new ConflictException($"Cannot delete: {count} event(s) use this status.");
 
         status.DeletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

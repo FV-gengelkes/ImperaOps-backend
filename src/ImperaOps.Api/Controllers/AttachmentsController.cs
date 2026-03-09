@@ -1,5 +1,6 @@
 using ImperaOps.Api.Contracts;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authorization;
@@ -38,7 +39,8 @@ public sealed class AttachmentsController : ScopedControllerBase
         string publicId, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
 
         var attachments = await _db.Attachments
             .AsNoTracking()
@@ -57,14 +59,15 @@ public sealed class AttachmentsController : ScopedControllerBase
     public async Task<ActionResult<AttachmentDto>> Upload(
         string publicId, IFormFile file, CancellationToken ct)
     {
-        if (file is null || file.Length == 0)     return BadRequest("No file provided.");
-        if (file.Length > MaxFileSizeBytes)        return BadRequest("File exceeds the 25 MB limit.");
+        if (file is null || file.Length == 0)     throw new ValidationException("No file provided.");
+        if (file.Length > MaxFileSizeBytes)        throw new ValidationException("File exceeds the 25 MB limit.");
         if (!AllowedMimeTypes.Contains(file.ContentType))
-            return BadRequest($"File type '{file.ContentType}' is not allowed.");
+            throw new ValidationException($"File type '{file.ContentType}' is not allowed.");
 
         var ev = await _db.Events.FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
-        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) return Forbid();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
+        if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var fileName   = Path.GetFileName(file.FileName);
         var sanitized  = SanitizeFileName(fileName);
@@ -91,17 +94,8 @@ public sealed class AttachmentsController : ScopedControllerBase
 
         _db.Attachments.Add(attachment);
 
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = ev.ClientId,
-            EntityType      = "event",
-            EntityId        = ev.Id,
-            EventType       = "attachment_added",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = $"Attached: {fileName} ({FormatSize(file.Length)}).",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", ev.Id, ev.ClientId, "attachment_added",
+            $"Attached: {fileName} ({FormatSize(file.Length)}).");
 
         await _db.SaveChangesAsync(ct);
 
@@ -117,10 +111,11 @@ public sealed class AttachmentsController : ScopedControllerBase
         string publicId, long attachmentId, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
 
         var attachment = await _db.Attachments.FindAsync([attachmentId], ct);
-        if (attachment is null || attachment.EntityId != ev.Id) return NotFound();
+        if (attachment is null || attachment.EntityId != ev.Id) throw new NotFoundException();
 
         var url = await _storage.GetPresignedUrlAsync(attachment.StorageKey, TimeSpan.FromMinutes(15));
         return Ok(new AttachmentUrlDto(url));
@@ -132,31 +127,23 @@ public sealed class AttachmentsController : ScopedControllerBase
         string publicId, long attachmentId, CancellationToken ct)
     {
         var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null || !HasClientAccess(ev.ClientId)) return NotFound();
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
 
         var attachment = await _db.Attachments.FindAsync([attachmentId], ct);
-        if (attachment is null || attachment.EntityId != ev.Id) return NotFound();
+        if (attachment is null || attachment.EntityId != ev.Id) throw new NotFoundException();
 
         var (actorId, actorName) = ResolveActor();
 
         var isManagerPlus = await IsManagerOrAboveAsync(_db, ev.ClientId, User, ct);
         if (!isManagerPlus && (actorId is null || attachment.UploadedByUserId != actorId))
-            return StatusCode(403, "You can only delete your own attachments.");
+            throw new ForbiddenException("You can only delete your own attachments.");
 
         await _storage.DeleteAsync(attachment.StorageKey, ct);
         attachment.DeletedAt = DateTimeOffset.UtcNow;
 
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = ev.ClientId,
-            EntityType      = "event",
-            EntityId        = ev.Id,
-            EventType       = "attachment_removed",
-            UserId          = actorId,
-            UserDisplayName = actorName,
-            Body            = $"Removed attachment: {attachment.FileName}.",
-            CreatedAt       = DateTimeOffset.UtcNow,
-        });
+        Audit.Record("event", ev.Id, ev.ClientId, "attachment_removed",
+            $"Removed attachment: {attachment.FileName}.");
 
         await _db.SaveChangesAsync(ct);
         return NoContent();

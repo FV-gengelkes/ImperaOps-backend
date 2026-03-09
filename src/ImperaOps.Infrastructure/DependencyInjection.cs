@@ -8,6 +8,7 @@ using ImperaOps.Infrastructure.Notifications;
 using ImperaOps.Infrastructure.Repositories;
 using ImperaOps.Infrastructure.Services;
 using ImperaOps.Infrastructure.Storage;
+using ImperaOps.Infrastructure.Ai;
 using ImperaOps.Infrastructure.Webhooks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -27,6 +28,8 @@ public static class DependencyInjection
             options.UseMySql(cs, ServerVersion.AutoDetect(cs));
         });
 
+        services.AddScoped<IAuditService, AuditService>();
+        services.AddScoped<IClientAdminService, ClientAdminService>();
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IEventReadRepository>(_ => new EventReadRepository(cs));
         services.AddScoped<IAuthRepository, AuthRepository>();
@@ -50,10 +53,15 @@ public static class DependencyInjection
         services.AddScoped<TaskReminderJob>();
         services.AddScoped<SlaEscalationJob>();
         services.AddScoped<WebhookDeliveryJob>();
+        services.AddScoped<InsightDetectionJob>();
 
         // Webhooks
         services.AddHttpClient("WebhookClient").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(15));
         services.AddScoped<IWebhookDispatcher, WebhookDispatcher>();
+
+        // AI — Claude
+        services.AddHttpClient("ClaudeClient").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(60));
+        services.AddScoped<IClaudeService, ClaudeService>();
 
         return services;
     }

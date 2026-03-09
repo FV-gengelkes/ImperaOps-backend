@@ -1,4 +1,5 @@
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,7 +22,7 @@ public sealed class TaxonomyController : ScopedControllerBase
     public async Task<ActionResult<IReadOnlyList<RootCauseTaxonomyItemDto>>> GetRootCauses(
         long clientId, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
+        RequireClientAccess(clientId);
 
         var items = await _db.RootCauseTaxonomyItems
             .AsNoTracking()
@@ -37,9 +38,9 @@ public sealed class TaxonomyController : ScopedControllerBase
     public async Task<ActionResult<RootCauseTaxonomyItemDto>> CreateRootCause(
         long clientId, [FromBody] CreateRootCauseRequest req, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Name is required.");
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.Name)) throw new ValidationException("Name is required.");
 
         var maxSort = await _db.RootCauseTaxonomyItems
             .Where(r => r.ClientId == clientId)
@@ -64,13 +65,13 @@ public sealed class TaxonomyController : ScopedControllerBase
     public async Task<IActionResult> UpdateRootCause(
         long clientId, long id, [FromBody] CreateRootCauseRequest req, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
-        if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest("Name is required.");
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (string.IsNullOrWhiteSpace(req.Name)) throw new ValidationException("Name is required.");
 
         var item = await _db.RootCauseTaxonomyItems
             .FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId, ct);
-        if (item is null) return NotFound();
+        if (item is null) throw new NotFoundException();
 
         item.Name = req.Name.Trim();
         await _db.SaveChangesAsync(ct);
@@ -81,16 +82,16 @@ public sealed class TaxonomyController : ScopedControllerBase
     public async Task<IActionResult> DeleteRootCause(
         long clientId, long id, CancellationToken ct)
     {
-        if (!HasClientAccess(clientId)) return NotFound();
-        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) return Forbid();
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
 
         var item = await _db.RootCauseTaxonomyItems
             .FirstOrDefaultAsync(r => r.Id == id && r.ClientId == clientId, ct);
-        if (item is null) return NotFound();
+        if (item is null) throw new NotFoundException();
 
         // Check if in use
         var inUse = await _db.Events.AnyAsync(e => e.RootCauseId == id, ct);
-        if (inUse) return Conflict("This root cause is referenced by one or more events and cannot be deleted.");
+        if (inUse) throw new ConflictException("This root cause is referenced by one or more events and cannot be deleted.");
 
         item.DeletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

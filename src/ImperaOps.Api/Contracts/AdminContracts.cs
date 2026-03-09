@@ -8,15 +8,17 @@ public sealed record AdminClientDto(
     string Slug,
     long?  ParentClientId,
     string? ParentClientName,
-    bool   IsActive,
+    string Status,
     int    UserCount,
     DateTimeOffset CreatedAt,
     IReadOnlyList<string> AppliedTemplateIds
 );
 
-public sealed record CreateClientRequest(string Name, long? ParentClientId, string? TemplateId = null);
+public sealed record CreateClientRequest(string Name, long? ParentClientId, string? TemplateId = null, string? Status = "Active", bool SeedDemoData = false);
 
-public sealed record UpdateClientRequest(string Name, long? ParentClientId, bool IsActive);
+public sealed record UpdateClientRequest(string Name, long? ParentClientId, string Status);
+
+public sealed record UpdateClientStatusRequest(string Status);
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,7 @@ public sealed record ChangePasswordRequest(string NewPassword);
 public sealed record UserClientAccessDto(
     long   ClientId,
     string ClientName,
-    bool   ClientIsActive,
+    string ClientStatus,
     string Role,
     DateTimeOffset GrantedAt
 );
@@ -106,6 +108,12 @@ public sealed record UpdateClientInboundEmailRequest(
     long?   DefaultInboundEventTypeId,
     long?   DefaultInboundWorkflowStatusId
 );
+
+// ── Client Data Management ───────────────────────────────────────────────────
+
+public sealed record PurgeConfirmRequest(string ConfirmName);
+
+public sealed record ResetClientRequest(string ConfirmName, string? TemplateId = null, bool SeedDemoData = false);
 
 // ── Event Templates ───────────────────────────────────────────────────────────
 

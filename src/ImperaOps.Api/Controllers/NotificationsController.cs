@@ -1,3 +1,4 @@
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Notifications;
 using Microsoft.AspNetCore.Authorization;
@@ -49,8 +50,7 @@ public sealed class NotificationsController : ScopedControllerBase
     [HttpGet("stream")]
     public async Task StreamAsync(CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) { Response.StatusCode = 401; return; }
+        var actorId = CurrentUserId();
 
         Response.Headers.Append("Content-Type", "text/event-stream; charset=utf-8");
         Response.Headers.Append("Cache-Control", "no-cache");
@@ -79,7 +79,7 @@ public sealed class NotificationsController : ScopedControllerBase
 
         try
         {
-            await foreach (var msg in _push.SubscribeAsync(actorId.Value, cts.Token))
+            await foreach (var msg in _push.SubscribeAsync(actorId, cts.Token))
             {
                 await Response.WriteAsync($"event: notification\ndata: {msg}\n\n", cts.Token);
                 await Response.Body.FlushAsync(cts.Token);
@@ -97,20 +97,19 @@ public sealed class NotificationsController : ScopedControllerBase
     [HttpGet("unread-count")]
     public async Task<ActionResult<object>> GetUnreadCount(CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         var count = await _db.Notifications
-            .CountAsync(n => n.UserId == actorId.Value && !n.IsRead, ct);
+            .CountAsync(n => n.UserId == actorId && !n.IsRead, ct);
 
         // Count open tasks directly assigned to this user (accurate regardless of notification history)
         var clientIds = await _db.UserClientAccess
-            .Where(a => a.UserId == actorId.Value)
+            .Where(a => a.UserId == actorId)
             .Select(a => a.ClientId)
             .ToListAsync(ct);
 
         var taskCount = await _db.Tasks
-            .CountAsync(t => clientIds.Contains(t.ClientId) && t.AssignedToUserId == actorId.Value && !t.IsComplete, ct);
+            .CountAsync(t => clientIds.Contains(t.ClientId) && t.AssignedToUserId == actorId && !t.IsComplete, ct);
 
         return Ok(new { count, taskCount });
     }
@@ -122,14 +121,13 @@ public sealed class NotificationsController : ScopedControllerBase
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         pageSize = Math.Clamp(pageSize, 1, 100);
         page     = Math.Max(1, page);
 
         var query = _db.Notifications
-            .Where(n => n.UserId == actorId.Value)
+            .Where(n => n.UserId == actorId)
             .OrderByDescending(n => n.CreatedAt);
 
         var totalCount = await query.CountAsync(ct);
@@ -146,11 +144,10 @@ public sealed class NotificationsController : ScopedControllerBase
     [HttpPatch("{id:long}/read")]
     public async Task<IActionResult> MarkRead(long id, CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         var notification = await _db.Notifications.FindAsync([id], ct);
-        if (notification is null || notification.UserId != actorId.Value) return NotFound();
+        if (notification is null || notification.UserId != actorId) throw new NotFoundException();
 
         notification.IsRead = true;
         await _db.SaveChangesAsync(ct);
@@ -161,11 +158,10 @@ public sealed class NotificationsController : ScopedControllerBase
     [HttpPatch("read-all")]
     public async Task<IActionResult> MarkAllRead(CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         await _db.Notifications
-            .Where(n => n.UserId == actorId.Value && !n.IsRead)
+            .Where(n => n.UserId == actorId && !n.IsRead)
             .ExecuteUpdateAsync(s => s.SetProperty(n => n.IsRead, true), ct);
 
         return NoContent();
@@ -175,12 +171,11 @@ public sealed class NotificationsController : ScopedControllerBase
     [HttpGet("preferences")]
     public async Task<ActionResult<List<NotificationPreferenceDto>>> GetPreferences(CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         var existing = await _db.NotificationPreferences
             .AsNoTracking()
-            .Where(p => p.UserId == actorId.Value)
+            .Where(p => p.UserId == actorId)
             .ToDictionaryAsync(p => p.NotificationType, ct);
 
         var result = KnownTypes.Select(type =>
@@ -197,15 +192,14 @@ public sealed class NotificationsController : ScopedControllerBase
     [HttpPut("preferences")]
     public async Task<IActionResult> SavePreferences([FromBody] SavePreferencesRequest req, CancellationToken ct)
     {
-        var (actorId, _) = ResolveActor();
-        if (actorId is null) return Unauthorized();
+        var actorId = CurrentUserId();
 
         foreach (var dto in req.Preferences)
         {
             if (!KnownTypes.Contains(dto.NotificationType)) continue;
 
             var existing = await _db.NotificationPreferences
-                .FirstOrDefaultAsync(p => p.UserId == actorId.Value && p.NotificationType == dto.NotificationType, ct);
+                .FirstOrDefaultAsync(p => p.UserId == actorId && p.NotificationType == dto.NotificationType, ct);
 
             if (existing is not null)
             {
@@ -216,7 +210,7 @@ public sealed class NotificationsController : ScopedControllerBase
             {
                 _db.NotificationPreferences.Add(new Domain.Entities.NotificationPreference
                 {
-                    UserId           = actorId.Value,
+                    UserId           = actorId,
                     NotificationType = dto.NotificationType,
                     EmailEnabled     = dto.EmailEnabled,
                     InAppEnabled     = dto.InAppEnabled,

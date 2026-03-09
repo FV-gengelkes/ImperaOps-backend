@@ -18,7 +18,9 @@ public sealed class EventReadRepository : IEventReadRepository
         long clientId, int page, int pageSize,
         long? eventTypeId, long? workflowStatusId,
         DateTime? dateFrom, DateTime? dateTo,
-        string? search, CancellationToken ct)
+        string? search, CancellationToken ct,
+        bool slaBreached = false,
+        bool? isClosed = null)
     {
         page     = page     <= 0 ? 1  : page;
         pageSize = pageSize <= 0 ? 25 : Math.Min(pageSize, 200);
@@ -37,6 +39,19 @@ public sealed class EventReadRepository : IEventReadRepository
                 OR et.Name LIKE CONCAT('%', @Search, '%')
                 OR ws.Name LIKE CONCAT('%', @Search, '%')
             )");
+        if (isClosed.HasValue)
+            where.Append(isClosed.Value ? " AND ws.IsClosed = 1" : " AND ws.IsClosed = 0");
+        if (slaBreached)
+        {
+            where.Append(@" AND ws.IsClosed = 0
+                AND EXISTS (
+                    SELECT 1 FROM SlaRules sr
+                    WHERE sr.ClientId = e.ClientId
+                      AND (sr.EventTypeId = e.EventTypeId OR sr.EventTypeId IS NULL)
+                      AND sr.ClosureHours IS NOT NULL
+                      AND DATE_ADD(e.CreatedAt, INTERVAL sr.ClosureHours HOUR) < UTC_TIMESTAMP()
+                )");
+        }
 
         var countSql = $@"
 SELECT COUNT(1)
@@ -49,7 +64,9 @@ LEFT JOIN WorkflowStatuses ws ON ws.Id = e.WorkflowStatusId
 SELECT e.Id, e.ClientId, e.PublicId, e.EventTypeId, et.Name AS EventTypeName,
        e.WorkflowStatusId, ws.Name AS WorkflowStatusName, ws.Color AS WorkflowStatusColor, ws.IsClosed AS WorkflowStatusIsClosed,
        e.Title, e.OccurredAt, e.Location, e.OwnerUserId, e.ReferenceNumber,
-       u.DisplayName AS OwnerDisplayName
+       u.DisplayName AS OwnerDisplayName,
+       (SELECT COUNT(DISTINCT lg.LinkGroupId)
+        FROM EventLinks lg WHERE lg.EventId = e.Id AND lg.DeletedAt IS NULL) AS LinkGroupCount
 FROM Events e
 LEFT JOIN EventTypes et ON et.Id = e.EventTypeId
 LEFT JOIN WorkflowStatuses ws ON ws.Id = e.WorkflowStatusId
@@ -79,9 +96,9 @@ LIMIT @PageSize OFFSET @Offset;";
 
     // ── Detail by PublicId ────────────────────────────────────────────────────
 
-    public async Task<EventDetailDto?> GetByPublicIdAsync(string publicId, CancellationToken ct)
+    public async Task<EventDetailDto?> GetByPublicIdAsync(string publicId, CancellationToken ct, long? clientId = null)
     {
-        const string sql = @"
+        var sql = @"
 SELECT e.Id, e.ClientId, e.PublicId, e.EventTypeId, et.Name AS EventTypeName,
        e.WorkflowStatusId, ws.Name AS WorkflowStatusName, ws.Color AS WorkflowStatusColor, ws.IsClosed AS WorkflowStatusIsClosed,
        e.Title, e.OccurredAt, e.Location, e.Description, e.ReportedByUserId,
@@ -91,6 +108,8 @@ SELECT e.Id, e.ClientId, e.PublicId, e.EventTypeId, et.Name AS EventTypeName,
        e.ReferenceNumber,
        e.RootCauseId, rc.Name AS RootCauseName,
        e.CorrectiveAction,
+       CASE WHEN inv.Id IS NOT NULL THEN 1 ELSE 0 END AS HasInvestigation,
+       inv.Status AS InvestigationStatus,
        e.CreatedAt, e.UpdatedAt
 FROM Events e
 LEFT JOIN EventTypes et ON et.Id = e.EventTypeId
@@ -98,14 +117,19 @@ LEFT JOIN WorkflowStatuses ws ON ws.Id = e.WorkflowStatusId
 LEFT JOIN Users rep ON rep.Id = e.ReportedByUserId
 LEFT JOIN Users own ON own.Id = e.OwnerUserId
 LEFT JOIN RootCauseTaxonomyItems rc ON rc.Id = e.RootCauseId
-WHERE e.PublicId = @PublicId
-LIMIT 1;";
+LEFT JOIN Investigations inv ON inv.EventId = e.Id AND inv.DeletedAt IS NULL
+WHERE e.PublicId = @PublicId AND e.DeletedAt IS NULL";
+
+        if (clientId.HasValue)
+            sql += " AND e.ClientId = @ClientId";
+
+        sql += "\nLIMIT 1;";
 
         await using var conn = new MySqlConnection(_connectionString);
         await conn.OpenAsync(ct);
 
         return await conn.QueryFirstOrDefaultAsync<EventDetailDto>(
-            new CommandDefinition(sql, new { PublicId = publicId }, cancellationToken: ct));
+            new CommandDefinition(sql, new { PublicId = publicId, ClientId = clientId }, cancellationToken: ct));
     }
 
     // ── Export ────────────────────────────────────────────────────────────────
@@ -304,11 +328,35 @@ WHERE e.ClientId IN @ClientIds{dateFilter}
             return row;
         }
 
+        // Count open events that have breached their SLA closure deadline
+        var slaBreachedSql = $@"
+SELECT COUNT(*)
+FROM Events e
+INNER JOIN WorkflowStatuses ws ON ws.Id = e.WorkflowStatusId AND ws.IsClosed = 0
+WHERE e.ClientId IN @ClientIds AND e.DeletedAt IS NULL
+  AND EXISTS (
+      SELECT 1 FROM SlaRules sr
+      WHERE sr.ClientId = e.ClientId
+        AND (sr.EventTypeId = e.EventTypeId OR sr.EventTypeId IS NULL)
+        AND sr.DeletedAt IS NULL
+        AND sr.ClosureHours IS NOT NULL
+        AND DATE_ADD(e.CreatedAt, INTERVAL sr.ClosureHours HOUR) < UTC_TIMESTAMP()
+  );";
+
         var byRootCauseTask  = ManyRootCause();
         var avgResTask       = OneNullableDouble(avgResolutionSql);
         var slaTask          = OneSlaRow();
 
-        await Task.WhenAll(summaryTask, byTypeTask, byMonthTask, topLocationsTask, byLocationAndTypeTask, byRootCauseTask, avgResTask, slaTask);
+        async Task<int> OneSlaBreachedCount()
+        {
+            await using var c = new MySqlConnection(_connectionString);
+            await c.OpenAsync(ct);
+            var val = await c.ExecuteScalarAsync<long>(new CommandDefinition(slaBreachedSql, p, cancellationToken: ct));
+            return (int)val;
+        }
+        var slaBreachedTask  = OneSlaBreachedCount();
+
+        await Task.WhenAll(summaryTask, byTypeTask, byMonthTask, topLocationsTask, byLocationAndTypeTask, byRootCauseTask, avgResTask, slaTask, slaBreachedTask);
 
         var summary           = await summaryTask;
         var byType            = await byTypeTask;
@@ -318,6 +366,7 @@ WHERE e.ClientId IN @ClientIds{dateFilter}
         var byRootCause       = await byRootCauseTask;
         var avgResolution     = await avgResTask;
         var slaRow            = await slaTask;
+        var slaBreached       = await slaBreachedTask;
 
         double? slaRate = null;
         if (slaRow.TotalClosed > 0)
@@ -337,6 +386,59 @@ WHERE e.ClientId IN @ClientIds{dateFilter}
             byLocationAndType,
             byRootCause,
             avgResolution,
-            slaRate);
+            slaRate,
+            slaBreached);
+    }
+
+    // ── SLA Rule Lookup ────────────────────────────────────────────────────────
+
+    public async Task<SlaRuleMatch?> GetSlaRuleForEventAsync(long clientId, long eventTypeId, CancellationToken ct)
+    {
+        const string sql = @"
+            SELECT Id, Name, InvestigationHours, ClosureHours
+            FROM SlaRules
+            WHERE ClientId = @ClientId AND DeletedAt IS NULL
+              AND (EventTypeId = @EventTypeId OR EventTypeId IS NULL)
+            ORDER BY CASE WHEN EventTypeId IS NULL THEN 1 ELSE 0 END
+            LIMIT 1";
+
+        await using var conn = new MySqlConnection(_connectionString);
+        return await conn.QueryFirstOrDefaultAsync<SlaRuleMatch>(
+            new CommandDefinition(sql, new { ClientId = clientId, EventTypeId = eventTypeId }, cancellationToken: ct));
+    }
+
+    // ── Workload ─────────────────────────────────────────────────────────────
+
+    public async Task<IReadOnlyList<WorkloadRowDto>> GetWorkloadAsync(long clientId, CancellationToken ct)
+    {
+        const string sql = @"
+            SELECT
+                e.OwnerUserId AS UserId,
+                COALESCE(u.DisplayName, 'Unassigned') AS UserName,
+                COUNT(*) AS OpenEvents,
+                COALESCE(tc.OpenTasks, 0) AS OpenTasks
+            FROM Events e
+            LEFT JOIN Users u ON u.Id = e.OwnerUserId
+            LEFT JOIN (
+                SELECT AssignedToUserId, COUNT(*) AS OpenTasks
+                FROM Tasks
+                WHERE ClientId = @ClientId AND IsComplete = 0 AND DeletedAt IS NULL AND AssignedToUserId IS NOT NULL
+                GROUP BY AssignedToUserId
+            ) tc ON tc.AssignedToUserId = e.OwnerUserId
+            WHERE e.ClientId = @ClientId
+              AND e.DeletedAt IS NULL
+              AND e.WorkflowStatusId NOT IN (
+                  SELECT ws.Id FROM WorkflowStatuses ws
+                  WHERE ws.IsClosed = 1
+                    AND ws.IsActive = 1
+                    AND (ws.ClientId = @ClientId OR (ws.ClientId = 0
+                         AND NOT EXISTS (SELECT 1 FROM WorkflowStatuses ws2 WHERE ws2.ClientId = @ClientId AND ws2.IsActive = 1)))
+              )
+            GROUP BY e.OwnerUserId, u.DisplayName, tc.OpenTasks
+            ORDER BY OpenEvents DESC";
+
+        await using var conn = new MySqlConnection(_connectionString);
+        var rows = await conn.QueryAsync<WorkloadRowDto>(new CommandDefinition(sql, new { ClientId = clientId }, cancellationToken: ct));
+        return rows.ToList();
     }
 }

@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using ImperaOps.Application.Abstractions;
 using ImperaOps.Application.Events.Commands;
 using ImperaOps.Domain.Entities;
+using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Storage;
 using Microsoft.AspNetCore.Mvc;
@@ -17,17 +18,20 @@ public sealed class PublicReportController : ControllerBase
     private readonly ICounterService _counter;
     private readonly IEventRepository _repo;
     private readonly IStorageService _storage;
+    private readonly IAuditService _audit;
 
     public PublicReportController(
         ImperaOpsDbContext db,
         ICounterService counter,
         IEventRepository repo,
-        IStorageService storage)
+        IStorageService storage,
+        IAuditService audit)
     {
         _db      = db;
         _counter = counter;
         _repo    = repo;
         _storage = storage;
+        _audit   = audit;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -49,9 +53,9 @@ public sealed class PublicReportController : ControllerBase
     {
         var client = await _db.Clients
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Slug == slug && c.IsActive, ct);
+            .FirstOrDefaultAsync(c => c.Slug == slug && c.Status != "Inactive", ct);
 
-        if (client is null) return NotFound("Reporting unavailable for this link.");
+        if (client is null) throw new NotFoundException("Reporting unavailable for this link.");
 
         var eventTypes = await _db.EventTypes
             .AsNoTracking()
@@ -67,7 +71,7 @@ public sealed class PublicReportController : ControllerBase
             .FirstOrDefaultAsync(ct);
 
         if (defaultStatus is null)
-            return NotFound("No open workflow status configured for this client.");
+            throw new NotFoundException("No open workflow status configured for this client.");
 
         string? logoUrl = null;
         if (!string.IsNullOrWhiteSpace(client.LogoStorageKey))
@@ -98,30 +102,30 @@ public sealed class PublicReportController : ControllerBase
         // Re-validate slug → ClientId match
         var client = await _db.Clients
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Slug == slug && c.IsActive, ct);
+            .FirstOrDefaultAsync(c => c.Slug == slug && c.Status != "Inactive", ct);
 
-        if (client is null) return NotFound("Reporting unavailable for this link.");
-        if (client.Id != req.ClientId) return BadRequest("ClientId mismatch.");
+        if (client is null) throw new NotFoundException("Reporting unavailable for this link.");
+        if (client.Id != req.ClientId) throw new ValidationException("ClientId mismatch.");
 
         // Validate EventType belongs to this client and is active
         var eventTypeValid = await _db.EventTypes
             .AnyAsync(t => t.Id == req.EventTypeId &&
                            (t.ClientId == 0 || t.ClientId == client.Id) &&
                            t.IsActive, ct);
-        if (!eventTypeValid) return BadRequest("Invalid event type.");
+        if (!eventTypeValid) throw new ValidationException("Invalid event type.");
 
         // Validate WorkflowStatus belongs to this client, is not closed, and is active
         var statusValid = await _db.WorkflowStatuses
             .AnyAsync(s => s.Id == req.WorkflowStatusId &&
                            (s.ClientId == 0 || s.ClientId == client.Id) &&
                            !s.IsClosed && s.IsActive, ct);
-        if (!statusValid) return BadRequest("Invalid workflow status.");
+        if (!statusValid) throw new ValidationException("Invalid workflow status.");
 
-        if (string.IsNullOrWhiteSpace(req.Title))          return BadRequest("Title is required.");
-        if (string.IsNullOrWhiteSpace(req.Description))   return BadRequest("Description is required.");
-        if (string.IsNullOrWhiteSpace(req.ReporterName))  return BadRequest("Reporter name is required.");
-        if (string.IsNullOrWhiteSpace(req.ReporterContact)) return BadRequest("Reporter email or phone is required.");
-        if (!IsValidContact(req.ReporterContact.Trim()))  return BadRequest("Reporter contact must be a valid email address or phone number.");
+        if (string.IsNullOrWhiteSpace(req.Title))          throw new ValidationException("Title is required.");
+        if (string.IsNullOrWhiteSpace(req.Description))   throw new ValidationException("Description is required.");
+        if (string.IsNullOrWhiteSpace(req.ReporterName))  throw new ValidationException("Reporter name is required.");
+        if (string.IsNullOrWhiteSpace(req.ReporterContact)) throw new ValidationException("Reporter email or phone is required.");
+        if (!IsValidContact(req.ReporterContact.Trim()))  throw new ValidationException("Reporter contact must be a valid email address or phone number.");
 
         var now = DateTimeOffset.UtcNow;
         var refNumber = await _counter.AllocateAsync(client.Id, "event", ct);
@@ -148,17 +152,9 @@ public sealed class PublicReportController : ControllerBase
 
         var eventId = await _repo.CreateAsync(ev, ct);
 
-        _db.AuditEvents.Add(new AuditEvent
-        {
-            ClientId        = client.Id,
-            EntityType      = "event",
-            EntityId        = eventId,
-            EventType       = "created",
-            UserId          = null,
-            UserDisplayName = req.ReporterName?.Trim() ?? "External",
-            Body            = "Event submitted via public intake form.",
-            CreatedAt       = now,
-        });
+        _audit.Record("event", eventId, client.Id, "created",
+            "Event submitted via public intake form.",
+            null, req.ReporterName?.Trim() ?? "External");
         await _db.SaveChangesAsync(ct);
 
         return Ok(new PublicCreateEventResponse(publicId));
