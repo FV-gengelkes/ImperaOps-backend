@@ -10,6 +10,7 @@ using ImperaOps.Infrastructure.Services;
 using ImperaOps.Infrastructure.Storage;
 using ImperaOps.Infrastructure.Ai;
 using ImperaOps.Infrastructure.Webhooks;
+using ImperaOps.Infrastructure.Workflows;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,6 +59,13 @@ public static class DependencyInjection
         // Webhooks
         services.AddHttpClient("WebhookClient").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(15));
         services.AddScoped<IWebhookDispatcher, WebhookDispatcher>();
+
+        // Workflow automation engine
+        services.AddScoped<IWorkflowRuleRepository, WorkflowRuleRepository>();
+        services.AddScoped<IEventMutator, WorkflowEventMutator>();
+        services.AddScoped<IWorkflowNotifier, WorkflowNotifier>();
+        services.AddScoped<IWorkflowActionService, WorkflowActionService>();
+        services.AddScoped<IWorkflowEngine, WorkflowEngine>();
 
         // AI — Claude
         services.AddHttpClient("ClaudeClient").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(60));

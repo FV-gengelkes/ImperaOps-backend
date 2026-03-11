@@ -32,7 +32,7 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, _) = await CreateController(ManagerUserId, "Manager");
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            ctrl.Start("EVT-9999", new CreateInvestigationRequest(null), CancellationToken.None));
+            ctrl.Start("EVT-9999", new CreateInvestigationRequest(null), 0, CancellationToken.None));
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class InvestigationsControllerTests
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
 
-        var result = await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(ManagerUserId), CancellationToken.None);
+        var result = await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(ManagerUserId), 0, CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(ok.Value);
@@ -59,7 +59,7 @@ public sealed class InvestigationsControllerTests
         var ev = await TestHelper.SeedEvent(db, ClientId);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None));
+            ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None));
     }
 
     [Fact]
@@ -68,9 +68,9 @@ public sealed class InvestigationsControllerTests
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
 
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
         await Assert.ThrowsAsync<ConflictException>(() =>
-            ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None));
+            ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None));
     }
 
     // ── Get Investigation ───────────────────────────────────────────────
@@ -81,7 +81,7 @@ public sealed class InvestigationsControllerTests
         var (ctrl, db) = await CreateController(InvestigatorUserId, "Investigator");
         var ev = await TestHelper.SeedEvent(db, ClientId);
 
-        var result = await ctrl.Get(ev.PublicId, CancellationToken.None);
+        var result = await ctrl.Get(ev.PublicId, 0, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result);
         Assert.Null(ok.Value);
     }
@@ -91,14 +91,14 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(ManagerUserId), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(ManagerUserId), 0, CancellationToken.None);
 
         // Re-create controller as investigator to test read access
         var invCtrl = new InvestigationsController(db);
         await TestHelper.SeedClientAndAccess(db, ClientId, InvestigatorUserId, "Investigator");
         TestHelper.SetUser(invCtrl, TestHelper.MakeUser(InvestigatorUserId, ClientId, "Investigator"), db);
 
-        var result = await invCtrl.Get(ev.PublicId, CancellationToken.None);
+        var result = await invCtrl.Get(ev.PublicId, 0, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result);
         var dto = Assert.IsType<InvestigationDto>(ok.Value);
         Assert.Equal("draft", dto.Status);
@@ -111,10 +111,10 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(ManagerUserId), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(ManagerUserId), 0, CancellationToken.None);
 
         var result = await ctrl.Update(ev.PublicId,
-            new UpdateInvestigationRequest("in_progress", null, null, null, null), CancellationToken.None);
+            new UpdateInvestigationRequest("in_progress", null, null, null, null), 0, CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var inv = await db.Investigations.FirstAsync(i => i.EventId == ev.Id);
@@ -127,11 +127,11 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), 0, CancellationToken.None);
 
         var result = await ctrl.Update(ev.PublicId,
-            new UpdateInvestigationRequest("review", null, null, null, null), CancellationToken.None);
+            new UpdateInvestigationRequest("review", null, null, null, null), 0, CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var inv = await db.Investigations.FirstAsync(i => i.EventId == ev.Id);
@@ -143,12 +143,12 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("review", null, null, null, null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("review", null, null, null, null), 0, CancellationToken.None);
 
         var result = await ctrl.Update(ev.PublicId,
-            new UpdateInvestigationRequest("completed", null, null, null, null), CancellationToken.None);
+            new UpdateInvestigationRequest("completed", null, null, null, null), 0, CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
         var inv = await db.Investigations.FirstAsync(i => i.EventId == ev.Id);
@@ -161,13 +161,13 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("review", null, null, null, null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("completed", null, null, null, null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("review", null, null, null, null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("completed", null, null, null, null), 0, CancellationToken.None);
 
         var result = await ctrl.Update(ev.PublicId,
-            new UpdateInvestigationRequest("in_progress", null, null, null, null), CancellationToken.None);
+            new UpdateInvestigationRequest("in_progress", null, null, null, null), 0, CancellationToken.None);
 
         Assert.IsType<NoContentResult>(result);
     }
@@ -177,11 +177,11 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
 
         await Assert.ThrowsAsync<ValidationException>(() =>
             ctrl.Update(ev.PublicId,
-                new UpdateInvestigationRequest("review", null, null, null, null), CancellationToken.None));
+                new UpdateInvestigationRequest("review", null, null, null, null), 0, CancellationToken.None));
     }
 
     [Fact]
@@ -189,11 +189,11 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
 
         await Assert.ThrowsAsync<ValidationException>(() =>
             ctrl.Update(ev.PublicId,
-                new UpdateInvestigationRequest("completed", null, null, null, null), CancellationToken.None));
+                new UpdateInvestigationRequest("completed", null, null, null, null), 0, CancellationToken.None));
     }
 
     [Fact]
@@ -201,10 +201,10 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
 
         await ctrl.Update(ev.PublicId,
-            new UpdateInvestigationRequest(null, "Test summary", "Root cause", "Fix it", null), CancellationToken.None);
+            new UpdateInvestigationRequest(null, "Test summary", "Root cause", "Fix it", null), 0, CancellationToken.None);
 
         var inv = await db.Investigations.FirstAsync(i => i.EventId == ev.Id);
         Assert.Equal("Test summary", inv.Summary);
@@ -223,13 +223,13 @@ public sealed class InvestigationsControllerTests
         // Manager starts with investigator as lead
         var mgrCtrl = new InvestigationsController(db);
         TestHelper.SetUser(mgrCtrl, TestHelper.MakeUser(ManagerUserId, ClientId, "Manager"), db);
-        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(InvestigatorUserId), CancellationToken.None);
+        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(InvestigatorUserId), 0, CancellationToken.None);
 
         // Investigator (lead) can update
         var invCtrl = new InvestigationsController(db);
         TestHelper.SetUser(invCtrl, TestHelper.MakeUser(InvestigatorUserId, ClientId, "Investigator"), db);
         var result = await invCtrl.Update(ev.PublicId,
-            new UpdateInvestigationRequest("in_progress", null, null, null, null), CancellationToken.None);
+            new UpdateInvestigationRequest("in_progress", null, null, null, null), 0, CancellationToken.None);
         Assert.IsType<NoContentResult>(result);
 
         // Different investigator cannot update
@@ -239,7 +239,7 @@ public sealed class InvestigationsControllerTests
         TestHelper.SetUser(otherCtrl, TestHelper.MakeUser(otherUserId, ClientId, "Investigator"), db);
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             otherCtrl.Update(ev.PublicId,
-                new UpdateInvestigationRequest(null, "hacked", null, null, null), CancellationToken.None));
+                new UpdateInvestigationRequest(null, "hacked", null, null, null), 0, CancellationToken.None));
     }
 
     // ── Witnesses ───────────────────────────────────────────────────────
@@ -254,16 +254,16 @@ public sealed class InvestigationsControllerTests
         await TestHelper.SeedClientAndAccess(db, ClientId, ManagerUserId, "Manager");
         var mgrCtrl = new InvestigationsController(db);
         TestHelper.SetUser(mgrCtrl, TestHelper.MakeUser(ManagerUserId, ClientId, "Manager"), db);
-        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
 
         var addResult = await ctrl.AddWitness(ev.PublicId,
-            new CreateWitnessRequest("John Doe", "john@test.com", "I saw everything", null), CancellationToken.None);
+            new CreateWitnessRequest("John Doe", "john@test.com", "I saw everything", null), 0, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(addResult);
         var dto = Assert.IsType<WitnessDto>(ok.Value);
         Assert.Equal("John Doe", dto.WitnessName);
         Assert.Equal(0, dto.SortOrder);
 
-        var getResult = await ctrl.GetWitnesses(ev.PublicId, CancellationToken.None);
+        var getResult = await ctrl.GetWitnesses(ev.PublicId, 0, CancellationToken.None);
         var getOk = Assert.IsType<OkObjectResult>(getResult);
         var witnesses = Assert.IsAssignableFrom<IEnumerable<WitnessDto>>(getOk.Value);
         Assert.Single(witnesses);
@@ -279,20 +279,20 @@ public sealed class InvestigationsControllerTests
 
         var mgrCtrl = new InvestigationsController(db);
         TestHelper.SetUser(mgrCtrl, TestHelper.MakeUser(ManagerUserId, ClientId, "Manager"), db);
-        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
 
         var invCtrl = new InvestigationsController(db);
         TestHelper.SetUser(invCtrl, TestHelper.MakeUser(InvestigatorUserId, ClientId, "Investigator"), db);
         var addResult = await invCtrl.AddWitness(ev.PublicId,
-            new CreateWitnessRequest("Jane", null, "Statement", null), CancellationToken.None);
+            new CreateWitnessRequest("Jane", null, "Statement", null), 0, CancellationToken.None);
         var witnessDto = Assert.IsType<WitnessDto>(((OkObjectResult)addResult).Value);
 
         // Investigator cannot delete
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            invCtrl.DeleteWitness(ev.PublicId, witnessDto.Id, CancellationToken.None));
+            invCtrl.DeleteWitness(ev.PublicId, witnessDto.Id, 0, CancellationToken.None));
 
         // Manager can delete
-        var mgrDelete = await mgrCtrl.DeleteWitness(ev.PublicId, witnessDto.Id, CancellationToken.None);
+        var mgrDelete = await mgrCtrl.DeleteWitness(ev.PublicId, witnessDto.Id, 0, CancellationToken.None);
         Assert.IsType<NoContentResult>(mgrDelete);
     }
 
@@ -307,16 +307,16 @@ public sealed class InvestigationsControllerTests
         await TestHelper.SeedClientAndAccess(db, ClientId, ManagerUserId, "Manager");
         var mgrCtrl = new InvestigationsController(db);
         TestHelper.SetUser(mgrCtrl, TestHelper.MakeUser(ManagerUserId, ClientId, "Manager"), db);
-        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await mgrCtrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
 
         var addResult = await ctrl.AddEvidence(ev.PublicId,
-            new CreateEvidenceRequest("Security Camera", "Footage from entrance", "video", null, null), CancellationToken.None);
+            new CreateEvidenceRequest("Security Camera", "Footage from entrance", "video", null, null), 0, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(addResult);
         var dto = Assert.IsType<EvidenceDto>(ok.Value);
         Assert.Equal("Security Camera", dto.Title);
         Assert.Equal("video", dto.EvidenceType);
 
-        var getResult = await ctrl.GetEvidence(ev.PublicId, CancellationToken.None);
+        var getResult = await ctrl.GetEvidence(ev.PublicId, 0, CancellationToken.None);
         var getOk = Assert.IsType<OkObjectResult>(getResult);
         var evidence = Assert.IsAssignableFrom<IEnumerable<EvidenceDto>>(getOk.Value);
         Assert.Single(evidence);
@@ -330,7 +330,7 @@ public sealed class InvestigationsControllerTests
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
 
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
 
         var audits = await db.AuditEvents.ToListAsync();
         Assert.Contains(audits, a => a.EventType == "investigation_started");
@@ -341,10 +341,10 @@ public sealed class InvestigationsControllerTests
     {
         var (ctrl, db) = await CreateController(ManagerUserId, "Manager");
         var ev = await TestHelper.SeedEvent(db, ClientId);
-        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("review", null, null, null, null), CancellationToken.None);
-        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("completed", null, null, null, null), CancellationToken.None);
+        await ctrl.Start(ev.PublicId, new CreateInvestigationRequest(null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("in_progress", null, null, null, null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("review", null, null, null, null), 0, CancellationToken.None);
+        await ctrl.Update(ev.PublicId, new UpdateInvestigationRequest("completed", null, null, null, null), 0, CancellationToken.None);
 
         var audits = await db.AuditEvents.ToListAsync();
         Assert.Contains(audits, a => a.EventType == "investigation_completed");

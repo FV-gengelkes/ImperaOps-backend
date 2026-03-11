@@ -25,14 +25,16 @@ public sealed class EventsController : ScopedControllerBase
     private readonly IEventReadRepository _readRepo;
     private readonly INotificationService _notifications;
     private readonly IWebhookDispatcher _webhooks;
+    private readonly IWorkflowEngine _workflows;
 
-    public EventsController(IMediator mediator, ImperaOpsDbContext db, IEventReadRepository readRepo, INotificationService notifications, IWebhookDispatcher webhooks)
+    public EventsController(IMediator mediator, ImperaOpsDbContext db, IEventReadRepository readRepo, INotificationService notifications, IWebhookDispatcher webhooks, IWorkflowEngine workflows)
     {
         _mediator      = mediator;
         _db            = db;
         _readRepo      = readRepo;
         _notifications = notifications;
         _webhooks      = webhooks;
+        _workflows     = workflows;
     }
 
     [Authorize]
@@ -172,6 +174,10 @@ public sealed class EventsController : ScopedControllerBase
             _ = _webhooks.DispatchAsync(req.ClientId, "event.created", BuildWebhookPayload("event.created", createdEvent, eventTypeName, statusName, statusIsClosed, null));
         }
 
+        // Evaluate workflow rules (fire-and-forget, non-blocking)
+        if (createdEvent is not null)
+            _ = _workflows.EvaluateAsync("event.created", createdEvent, null, ct);
+
         return Ok(new CreateEventResponse(result.EventId, result.PublicId));
     }
 
@@ -180,11 +186,13 @@ public sealed class EventsController : ScopedControllerBase
     public async Task<IActionResult> Update(
         [FromRoute] string publicId,
         [FromBody] UpdateEventRequest req,
+        [FromQuery] long clientId = 0,
         CancellationToken ct = default)
     {
-        var existing = await _db.Events
-            .AsNoTracking()
-            .FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
+        var query = _db.Events.AsNoTracking().Where(e => e.PublicId == publicId);
+        if (clientId > 0)
+            query = query.Where(e => e.ClientId == clientId);
+        var existing = await query.FirstOrDefaultAsync(ct);
 
         if (existing is null || !HasClientAccess(existing.ClientId)) throw new NotFoundException();
 
@@ -271,6 +279,28 @@ public sealed class EventsController : ScopedControllerBase
                 existing.ClientId, publicId, existing.Title, ct);
         }
 
+        // Evaluate workflow rules
+        {
+            var updatedEvent = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.Id == existing.Id, ct);
+            if (updatedEvent is not null)
+            {
+                _ = _workflows.EvaluateAsync("event.updated", updatedEvent, existing, ct);
+
+                if (existing.WorkflowStatusId != req.WorkflowStatusId)
+                    _ = _workflows.EvaluateAsync("event.status_changed", updatedEvent, existing, ct);
+
+                if (existing.OwnerUserId != req.OwnerUserId)
+                    _ = _workflows.EvaluateAsync("event.assigned", updatedEvent, existing, ct);
+
+                var isNowClosed = await _db.WorkflowStatuses.AsNoTracking()
+                    .Where(s => s.Id == req.WorkflowStatusId).Select(s => s.IsClosed).FirstOrDefaultAsync(ct);
+                var wasClosed = await _db.WorkflowStatuses.AsNoTracking()
+                    .Where(s => s.Id == existing.WorkflowStatusId).Select(s => s.IsClosed).FirstOrDefaultAsync(ct);
+                if (!wasClosed && isNowClosed)
+                    _ = _workflows.EvaluateAsync("event.closed", updatedEvent, existing, ct);
+            }
+        }
+
         // Dispatch webhooks (fire-and-forget)
         {
             var newStatusIsClosed = await _db.WorkflowStatuses.AsNoTracking()
@@ -310,11 +340,11 @@ public sealed class EventsController : ScopedControllerBase
     [Authorize]
     [HttpPost("{publicId}/clone")]
     public async Task<ActionResult<object>> Clone(
-        [FromRoute] string publicId, CancellationToken ct = default)
+        [FromRoute] string publicId, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var existing = await _db.Events
-            .AsNoTracking()
-            .FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
+        var cloneQuery = _db.Events.AsNoTracking().Where(e => e.PublicId == publicId);
+        if (clientId > 0) cloneQuery = cloneQuery.Where(e => e.ClientId == clientId);
+        var existing = await cloneQuery.FirstOrDefaultAsync(ct);
 
         if (existing is null || !HasClientAccess(existing.ClientId)) throw new NotFoundException();
         if (!await IsManagerOrAboveAsync(_db, existing.ClientId, User, ct)) throw new ForbiddenException();
@@ -460,21 +490,23 @@ public sealed class EventsController : ScopedControllerBase
     [HttpDelete("{publicId}")]
     public async Task<IActionResult> Delete(
         [FromRoute] string publicId,
+        [FromQuery] long clientId = 0,
         CancellationToken ct = default)
     {
-        var ev = await _db.Events
-            .FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
+        var delQuery = _db.Events.Where(e => e.PublicId == publicId);
+        if (clientId > 0) delQuery = delQuery.Where(e => e.ClientId == clientId);
+        var ev = await delQuery.FirstOrDefaultAsync(ct);
 
         if (ev is null || !HasClientAccess(ev.ClientId)) throw new NotFoundException();
         if (!await IsAdminOfClientAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
-        var clientId = ev.ClientId;
-        var pid      = ev.PublicId;
+        var evClientId = ev.ClientId;
+        var pid        = ev.PublicId;
         ev.DeletedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
 
-        _ = _webhooks.DispatchAsync(clientId, "event.deleted", new {
-            @event = "event.deleted", timestamp = DateTimeOffset.UtcNow, clientId,
+        _ = _webhooks.DispatchAsync(evClientId, "event.deleted", new {
+            @event = "event.deleted", timestamp = DateTimeOffset.UtcNow, clientId = evClientId,
             data = new { publicId = pid },
         });
 

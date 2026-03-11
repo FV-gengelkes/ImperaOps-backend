@@ -41,13 +41,36 @@ public static class DemoDataGenerator
             "Forklift Aisle 3", "Press Room - Machine 7", "Paint Booth 2",
             "Quality Lab", "Shipping Bay 4", "Break Room", "Maintenance Shop"
         },
+        ["saas-operations"] = new[]
+        {
+            "Platform Core - us-east-1", "API Gateway - production", "Auth Service - SSO",
+            "Data Pipeline - sync-workers", "Dashboard - cdn-edge", "Integrations - webhook-relay",
+            "Database - primary cluster", "Cache Layer - Redis", "CI/CD - deploy pipeline",
+            "Monitoring - alerting stack"
+        },
     };
 
     // ── Description templates per event type pattern ────────────────────
 
-    private static string GenerateDescription(string eventTypeName, string location)
+    private static string GenerateDescription(string eventTypeName, string location, string? templateId = null)
     {
-        var templates = new[]
+        if (templateId == "saas-operations")
+        {
+            var templates = new[]
+            {
+                $"{eventTypeName} issue detected at {location}. On-call engineer paged. Monitoring dashboards show elevated error rates.",
+                $"{eventTypeName} event at {location}. Automated alerting triggered. Team investigating root cause and assessing customer impact.",
+                $"Degraded performance in {location} related to {eventTypeName.ToLower()}. P99 latency elevated. No data loss observed.",
+                $"{eventTypeName} incident at {location}. Upstream dependency showing errors. Failover initiated while investigating root cause.",
+                $"Alert fired for {eventTypeName.ToLower()} at {location}. Service partially degraded. Customer-facing impact being assessed.",
+                $"{eventTypeName} at {location}. Deployment rollback under consideration. Error budget consumption rate elevated.",
+                $"Automated monitoring detected {eventTypeName.ToLower()} at {location}. Runbook initiated. Status page updated.",
+                $"{eventTypeName} event at {location}. Correlation with recent config change under investigation. Temporary mitigation applied.",
+            };
+            return templates[Rng.Next(templates.Length)];
+        }
+
+        var safetyTemplates = new[]
         {
             $"{eventTypeName} reported at {location}. Initial assessment underway. Area has been cordoned off pending investigation.",
             $"Incident involving {eventTypeName.ToLower()} occurred at {location}. Supervisor was notified immediately. No injuries reported at this time.",
@@ -58,7 +81,7 @@ public static class DemoDataGenerator
             $"Incident: {eventTypeName} at {location}. Root cause analysis in progress. Temporary safeguards have been implemented.",
             $"{eventTypeName} event at {location}. No immediate danger. Investigation team assigned to determine contributing factors.",
         };
-        return templates[Rng.Next(templates.Length)];
+        return safetyTemplates[Rng.Next(safetyTemplates.Length)];
     }
 
     /// <summary>
@@ -79,12 +102,22 @@ public static class DemoDataGenerator
         var locations = IndustryLocations.GetValueOrDefault(templateId) ?? IndustryLocations["facilities-mgmt"];
 
         // ── Root causes ────────────────────────────────────────────────
-        var rootCauseNames = new[]
-        {
-            "Human Error", "Equipment Failure", "Inadequate Training",
-            "Procedural Gap", "Environmental Factor", "Material Defect",
-            "Communication Breakdown", "Fatigue / Overwork"
-        };
+        var rootCauseNames = templateId == "saas-operations"
+            ? new[]
+            {
+                "Cache / Memory Saturation", "Stale Configuration",
+                "Import / Parser Error", "Certificate Expiration",
+                "Deployment Regression", "Vendor / Third-Party Outage",
+                "Infrastructure Capacity", "Data Integrity / Corruption",
+                "Human Error", "Access / Permission Misconfiguration",
+                "Regulatory / Compliance Gap", "Unknown / Under Investigation"
+            }
+            : new[]
+            {
+                "Human Error", "Equipment Failure", "Inadequate Training",
+                "Procedural Gap", "Environmental Factor", "Material Defect",
+                "Communication Breakdown", "Fatigue / Overwork"
+            };
         var rootCauses = rootCauseNames.Select((name, i) => new RootCauseTaxonomyItem
         {
             ClientId  = clientId,
@@ -179,7 +212,7 @@ public static class DemoDataGenerator
                 if (isClosed && Rng.NextDouble() < 0.6)
                 {
                     rootCauseId = rootCauseIds[Rng.Next(rootCauseIds.Count)];
-                    correctiveAction = GenerateCorrectiveAction();
+                    correctiveAction = GenerateCorrectiveAction(templateId);
                 }
                 else if (!isClosed && Rng.NextDouble() < 0.2)
                 {
@@ -194,10 +227,10 @@ public static class DemoDataGenerator
                     PublicId         = $"EVT-{refNumber:D4}",
                     EventTypeId      = etId,
                     WorkflowStatusId = statusId,
-                    Title            = GenerateTitle(etName, location),
+                    Title            = GenerateTitle(etName, location, templateId),
                     OccurredAt       = occurredAt,
                     Location         = location,
-                    Description      = GenerateDescription(etName, location),
+                    Description      = GenerateDescription(etName, location, templateId),
                     OwnerUserId      = ownerUserId,
                     RootCauseId      = rootCauseId,
                     CorrectiveAction = correctiveAction,
@@ -291,9 +324,22 @@ public static class DemoDataGenerator
         || key.Contains("closed", StringComparison.OrdinalIgnoreCase)
         || key.Contains("completed", StringComparison.OrdinalIgnoreCase);
 
-    private static string GenerateTitle(string eventType, string location)
+    private static string GenerateTitle(string eventType, string location, string? templateId = null)
     {
-        var templates = new[]
+        if (templateId == "saas-operations")
+        {
+            var templates = new[]
+            {
+                $"{eventType} issue in {location}",
+                $"{location} - {eventType.ToLower()} alert",
+                $"{eventType} degradation affecting {location}",
+                $"{location}: {eventType.ToLower()} incident detected",
+                $"{eventType} failure in {location} production environment",
+            };
+            return templates[Rng.Next(templates.Length)];
+        }
+
+        var safetyTemplates = new[]
         {
             $"{eventType} at {location}",
             $"{eventType} - {location}",
@@ -301,12 +347,28 @@ public static class DemoDataGenerator
             $"{location}: {eventType} incident",
             $"{eventType} involving personnel at {location}",
         };
-        return templates[Rng.Next(templates.Length)];
+        return safetyTemplates[Rng.Next(safetyTemplates.Length)];
     }
 
-    private static string GenerateCorrectiveAction()
+    private static string GenerateCorrectiveAction(string? templateId = null)
     {
-        var actions = new[]
+        if (templateId == "saas-operations")
+        {
+            var actions = new[]
+            {
+                "Increased worker pool capacity and added queue depth alerting. Runbook updated with escalation thresholds.",
+                "Configuration drift corrected. Added automated config validation to deployment pipeline. Monitoring enhanced.",
+                "Implemented canary deployment for this service. Added rollback automation triggered by error rate SLO breach.",
+                "Certificate auto-renewal enabled. Added 30/14/7-day expiration alerts. Included in quarterly infrastructure audit.",
+                "Added retry limits and circuit breaker pattern. Implemented fallback queue with dead-letter monitoring.",
+                "Vendor failover path tested and documented. Added secondary provider integration. SLA review scheduled.",
+                "Updated access control policies. Added permission change audit logging. Quarterly access review mandated.",
+                "Data validation pipeline enhanced with schema checks. Added pre-production data quality gate for imports.",
+            };
+            return actions[Rng.Next(actions.Length)];
+        }
+
+        var safetyActions = new[]
         {
             "Retraining scheduled for all affected personnel. Updated SOP distributed to team leads. Follow-up audit scheduled in 30 days.",
             "Equipment has been repaired and recertified. Maintenance schedule updated to prevent recurrence. Supervisor sign-off required.",
@@ -317,6 +379,6 @@ public static class DemoDataGenerator
             "Communication protocol updated. Pre-shift briefing now includes this hazard. Buddy system implemented for high-risk tasks.",
             "Area redesigned to improve ergonomics. Rest break schedule adjusted. Occupational health follow-up scheduled.",
         };
-        return actions[Rng.Next(actions.Length)];
+        return safetyActions[Rng.Next(safetyActions.Length)];
     }
 }

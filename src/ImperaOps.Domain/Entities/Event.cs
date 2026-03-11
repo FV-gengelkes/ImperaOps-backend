@@ -20,6 +20,14 @@ public sealed class Event : ISoftDeletable
     public long ReferenceNumber { get; set; }
     public long? RootCauseId { get; set; }
     public string? CorrectiveAction { get; set; }
+    // ── Public API attribution ────────────────────────────────────────────────
+    /// <summary>"web" | "api" | "email" | "public-form"</summary>
+    public string? CreatedVia { get; set; }
+    public long? CreatedByApiCredentialId { get; set; }
+    /// <summary>Integration source, e.g. "datadog", "pagerduty".</summary>
+    public string? Source { get; set; }
+    /// <summary>External correlation ID for deduplication.</summary>
+    public string? ExternalId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }

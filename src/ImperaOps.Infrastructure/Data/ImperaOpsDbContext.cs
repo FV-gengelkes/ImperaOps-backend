@@ -34,6 +34,11 @@ public sealed class ImperaOpsDbContext : DbContext
     public DbSet<InvestigationEvidence> InvestigationEvidence => Set<InvestigationEvidence>();
     public DbSet<ClientDocument> ClientDocuments => Set<ClientDocument>();
     public DbSet<DocumentReference> DocumentReferences => Set<DocumentReference>();
+    public DbSet<ApiCredential> ApiCredentials => Set<ApiCredential>();
+    public DbSet<ApiRequestLog> ApiRequestLogs => Set<ApiRequestLog>();
+    public DbSet<ApiCredentialAuditLog> ApiCredentialAuditLogs => Set<ApiCredentialAuditLog>();
+    public DbSet<WorkflowRule> WorkflowRules => Set<WorkflowRule>();
+    public DbSet<WorkflowRuleExecution> WorkflowRuleExecutions => Set<WorkflowRuleExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -49,6 +54,9 @@ public sealed class ImperaOpsDbContext : DbContext
             b.Property(x => x.ExternalReporterName).HasMaxLength(200);
             b.Property(x => x.ExternalReporterContact).HasMaxLength(200);
             b.Property(x => x.CorrectiveAction).HasColumnType("longtext");
+            b.Property(x => x.CreatedVia).HasMaxLength(32);
+            b.Property(x => x.Source).HasMaxLength(100);
+            b.Property(x => x.ExternalId).HasMaxLength(255);
             b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
             b.HasIndex(x => new { x.ClientId, x.OccurredAt });
             b.HasIndex(x => new { x.ClientId, x.ReferenceNumber }).IsUnique();
@@ -170,8 +178,10 @@ public sealed class ImperaOpsDbContext : DbContext
             b.Property(x => x.SystemName).HasMaxLength(100);
             b.Property(x => x.LinkColor).HasMaxLength(7);
             b.Property(x => x.InboundEmailSlug).HasMaxLength(100);
+            b.Property(x => x.ClientSid).HasMaxLength(64).IsRequired();
             b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
             b.HasIndex(x => x.Slug).IsUnique();
+            b.HasIndex(x => x.ClientSid).IsUnique();
             b.HasIndex(x => x.InboundEmailSlug).IsUnique();
             b.HasIndex(x => x.ParentClientId);
             b.HasQueryFilter(x => x.DeletedAt == null);
@@ -398,6 +408,75 @@ public sealed class ImperaOpsDbContext : DbContext
             b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
             b.HasIndex(x => new { x.InvestigationId, x.SortOrder });
             b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<ApiCredential>(b =>
+        {
+            b.ToTable("ApiCredentials");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Name).HasMaxLength(255).IsRequired();
+            b.Property(x => x.KeyId).HasMaxLength(64).IsRequired();
+            b.Property(x => x.SecretHash).HasMaxLength(255).IsRequired();
+            b.Property(x => x.SecretLast4).HasMaxLength(8).IsRequired();
+            b.Property(x => x.ScopesJson).HasColumnType("json").IsRequired();
+            b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+            b.Property(x => x.LastUsedIp).HasMaxLength(64);
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => x.KeyId).IsUnique();
+            b.HasIndex(x => new { x.ClientId, x.Status });
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<ApiRequestLog>(b =>
+        {
+            b.ToTable("ApiRequestLogs");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Method).HasMaxLength(16).IsRequired();
+            b.Property(x => x.Path).HasMaxLength(255).IsRequired();
+            b.Property(x => x.IpAddress).HasMaxLength(64);
+            b.Property(x => x.UserAgent).HasMaxLength(255);
+            b.Property(x => x.RequestId).HasMaxLength(64).IsRequired();
+            b.HasIndex(x => new { x.ClientId, x.CreatedAt });
+        });
+
+        modelBuilder.Entity<ApiCredentialAuditLog>(b =>
+        {
+            b.ToTable("ApiCredentialAuditLogs");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Action).HasMaxLength(32).IsRequired();
+            b.Property(x => x.DetailsJson).HasColumnType("json");
+            b.HasIndex(x => x.ApiCredentialId);
+        });
+
+        modelBuilder.Entity<WorkflowRule>(b =>
+        {
+            b.ToTable("WorkflowRules");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Name).HasMaxLength(255).IsRequired();
+            b.Property(x => x.Description).HasColumnType("longtext");
+            b.Property(x => x.TriggerType).HasMaxLength(50).IsRequired();
+            b.Property(x => x.ConditionsJson).HasColumnType("longtext").IsRequired();
+            b.Property(x => x.ActionsJson).HasColumnType("longtext").IsRequired();
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => new { x.ClientId, x.TriggerType });
+            b.HasIndex(x => x.DeletedAt);
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<WorkflowRuleExecution>(b =>
+        {
+            b.ToTable("WorkflowRuleExecutions");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.TriggerType).HasMaxLength(50).IsRequired();
+            b.Property(x => x.ErrorMessage).HasColumnType("longtext");
+            b.HasIndex(x => x.WorkflowRuleId);
+            b.HasIndex(x => x.EventId);
+            b.HasIndex(x => new { x.ClientId, x.ExecutedAt });
         });
     }
 }

@@ -38,6 +38,7 @@ public sealed class EventReadRepository : IEventReadRepository
                 OR e.Description LIKE CONCAT('%', @Search, '%')
                 OR et.Name LIKE CONCAT('%', @Search, '%')
                 OR ws.Name LIKE CONCAT('%', @Search, '%')
+                OR rc.Name LIKE CONCAT('%', @Search, '%')
             )");
         if (isClosed.HasValue)
             where.Append(isClosed.Value ? " AND ws.IsClosed = 1" : " AND ws.IsClosed = 0");
@@ -58,6 +59,7 @@ SELECT COUNT(1)
 FROM Events e
 LEFT JOIN EventTypes et ON et.Id = e.EventTypeId
 LEFT JOIN WorkflowStatuses ws ON ws.Id = e.WorkflowStatusId
+LEFT JOIN RootCauseTaxonomyItems rc ON rc.Id = e.RootCauseId
 {where};";
 
         var pageSql = $@"
@@ -70,6 +72,7 @@ SELECT e.Id, e.ClientId, e.PublicId, e.EventTypeId, et.Name AS EventTypeName,
 FROM Events e
 LEFT JOIN EventTypes et ON et.Id = e.EventTypeId
 LEFT JOIN WorkflowStatuses ws ON ws.Id = e.WorkflowStatusId
+LEFT JOIN RootCauseTaxonomyItems rc ON rc.Id = e.RootCauseId
 LEFT JOIN Users u ON u.Id = e.OwnerUserId
 {where}
 ORDER BY e.OccurredAt DESC
@@ -150,6 +153,7 @@ WHERE e.PublicId = @PublicId AND e.DeletedAt IS NULL";
                 OR e.Description LIKE CONCAT('%', @Search, '%')
                 OR et.Name LIKE CONCAT('%', @Search, '%')
                 OR ws.Name LIKE CONCAT('%', @Search, '%')
+                OR rc.Name LIKE CONCAT('%', @Search, '%')
             )");
 
         var sql = $@"
@@ -158,6 +162,7 @@ SELECT e.PublicId, e.OccurredAt, et.Name AS EventTypeName, ws.Name AS WorkflowSt
 FROM Events e
 LEFT JOIN EventTypes et ON et.Id = e.EventTypeId
 LEFT JOIN WorkflowStatuses ws ON ws.Id = e.WorkflowStatusId
+LEFT JOIN RootCauseTaxonomyItems rc ON rc.Id = e.RootCauseId
 LEFT JOIN Users own ON own.Id = e.OwnerUserId
 {where}
 ORDER BY e.OccurredAt DESC;";
@@ -195,9 +200,9 @@ ORDER BY e.OccurredAt DESC;";
         var summarySql = $@"
 SELECT
     COUNT(*)                                                                           AS Total,
-    SUM(ws.IsClosed = 0 AND ws.Name = 'Open')                                         AS Open,
-    SUM(ws.IsClosed = 0 AND ws.Name = 'In Progress')                                  AS InProgress,
-    SUM(ws.IsClosed = 0 AND ws.Name = 'Blocked')                                      AS Blocked,
+    SUM(ws.IsClosed = 0)                                                              AS Open,
+    CAST(0 AS DECIMAL)                                                                 AS InProgress,
+    CAST(0 AS DECIMAL)                                                                 AS Blocked,
     SUM(ws.IsClosed = 1)                                                              AS Closed,
     SUM(YEAR(e.OccurredAt) = YEAR(CURDATE()) AND MONTH(e.OccurredAt) = MONTH(CURDATE())) AS ThisMonth,
     SUM(YEAR(e.OccurredAt) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))

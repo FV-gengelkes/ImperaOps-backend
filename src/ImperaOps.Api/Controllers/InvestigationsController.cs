@@ -17,20 +17,28 @@ public sealed class InvestigationsController : ScopedControllerBase
 
     public InvestigationsController(ImperaOpsDbContext db) => _db = db;
 
-    private async Task<(Event? ev, long clientId)> ResolveEvent(string publicId, CancellationToken ct)
+    private async Task<(Event? ev, long clientId)> ResolveEvent(string publicId, long filterClientId, CancellationToken ct)
     {
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
+        var query = _db.Events.AsNoTracking().Where(e => e.PublicId == publicId);
+        if (filterClientId > 0)
+            query = query.Where(e => e.ClientId == filterClientId);
+        else if (!IsSuperAdmin)
+        {
+            var clientIds = AuthorizedClientIds();
+            query = query.Where(e => clientIds.Contains(e.ClientId));
+        }
+        var ev = await query.FirstOrDefaultAsync(ct);
+        if (ev != null) RequireClientAccess(ev.ClientId);
         return (ev, ev?.ClientId ?? 0);
     }
 
     // GET api/v1/events/{publicId}/investigation
     [HttpGet]
-    public async Task<IActionResult> Get(string publicId, CancellationToken ct)
+    public async Task<IActionResult> Get(string publicId, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsInvestigatorOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var inv = await _db.Investigations.AsNoTracking()
             .FirstOrDefaultAsync(i => i.EventId == ev.Id, ct);
@@ -45,12 +53,11 @@ public sealed class InvestigationsController : ScopedControllerBase
 
     // POST api/v1/events/{publicId}/investigation
     [HttpPost]
-    public async Task<IActionResult> Start(string publicId, [FromBody] CreateInvestigationRequest req, CancellationToken ct)
+    public async Task<IActionResult> Start(string publicId, [FromBody] CreateInvestigationRequest req, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsManagerOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsManagerOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var exists = await _db.Investigations.AnyAsync(i => i.EventId == ev.Id, ct);
         if (exists) throw new ConflictException("Investigation already exists for this event.");
@@ -58,7 +65,7 @@ public sealed class InvestigationsController : ScopedControllerBase
         var now = DateTimeOffset.UtcNow;
         var inv = new Investigation
         {
-            ClientId = clientId,
+            ClientId = evClientId,
             EventId = ev.Id,
             Status = "draft",
             LeadInvestigatorUserId = req.LeadInvestigatorUserId,
@@ -68,7 +75,7 @@ public sealed class InvestigationsController : ScopedControllerBase
         };
         _db.Investigations.Add(inv);
 
-        Audit.Record("event", ev.Id, clientId, "investigation_started",
+        Audit.Record("event", ev.Id, evClientId, "investigation_started",
             $"Investigation started for {ev.PublicId}");
 
         await _db.SaveChangesAsync(ct);
@@ -77,14 +84,13 @@ public sealed class InvestigationsController : ScopedControllerBase
 
     // PUT api/v1/events/{publicId}/investigation
     [HttpPut]
-    public async Task<IActionResult> Update(string publicId, [FromBody] UpdateInvestigationRequest req, CancellationToken ct)
+    public async Task<IActionResult> Update(string publicId, [FromBody] UpdateInvestigationRequest req, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
 
-        var isManager = await IsManagerOrAboveAsync(_db, clientId, User, ct);
-        var isInvestigator = !isManager && await IsInvestigatorOrAboveAsync(_db, clientId, User, ct);
+        var isManager = await IsManagerOrAboveAsync(_db, evClientId, User, ct);
+        var isInvestigator = !isManager && await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct);
         if (!isManager && !isInvestigator) throw new ForbiddenException();
 
         var inv = await _db.Investigations.FirstOrDefaultAsync(i => i.EventId == ev.Id, ct);
@@ -109,20 +115,27 @@ public sealed class InvestigationsController : ScopedControllerBase
 
             if (req.Status == "completed")
             {
-                Audit.Record("event", ev.Id, clientId, "investigation_completed",
+                Audit.Record("event", ev.Id, evClientId, "investigation_completed",
                     $"Investigation completed for {ev.PublicId}");
             }
             else
             {
-                Audit.Record("event", ev.Id, clientId, "investigation_updated",
+                Audit.Record("event", ev.Id, evClientId, "investigation_updated",
                     $"Investigation status changed to {req.Status} for {ev.PublicId}");
             }
         }
 
-        if (req.Summary != null) inv.Summary = req.Summary;
-        if (req.RootCauseAnalysis != null) inv.RootCauseAnalysis = req.RootCauseAnalysis;
-        if (req.CorrectiveActions != null) inv.CorrectiveActions = req.CorrectiveActions;
+        var contentChanged = false;
+        if (req.Summary != null && req.Summary != inv.Summary) { inv.Summary = req.Summary; contentChanged = true; }
+        if (req.RootCauseAnalysis != null && req.RootCauseAnalysis != inv.RootCauseAnalysis) { inv.RootCauseAnalysis = req.RootCauseAnalysis; contentChanged = true; }
+        if (req.CorrectiveActions != null && req.CorrectiveActions != inv.CorrectiveActions) { inv.CorrectiveActions = req.CorrectiveActions; contentChanged = true; }
         if (req.LeadInvestigatorUserId.HasValue) inv.LeadInvestigatorUserId = req.LeadInvestigatorUserId;
+
+        if (contentChanged && req.Status == null)
+        {
+            Audit.Record("event", ev.Id, evClientId, "investigation_updated",
+                $"Investigation details updated for {ev.PublicId}");
+        }
 
         inv.UpdatedAt = now;
         await _db.SaveChangesAsync(ct);
@@ -132,12 +145,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     // ── Witnesses ────────────────────────────────────────────────────────────────
 
     [HttpGet("witnesses")]
-    public async Task<IActionResult> GetWitnesses(string publicId, CancellationToken ct)
+    public async Task<IActionResult> GetWitnesses(string publicId, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsInvestigatorOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var inv = await _db.Investigations.AsNoTracking().FirstOrDefaultAsync(i => i.EventId == ev.Id, ct);
         if (inv == null) return Ok(Array.Empty<WitnessDto>());
@@ -153,12 +165,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     }
 
     [HttpPost("witnesses")]
-    public async Task<IActionResult> AddWitness(string publicId, [FromBody] CreateWitnessRequest req, CancellationToken ct)
+    public async Task<IActionResult> AddWitness(string publicId, [FromBody] CreateWitnessRequest req, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsInvestigatorOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var inv = await _db.Investigations.FirstOrDefaultAsync(i => i.EventId == ev.Id, ct);
         if (inv == null) throw new NotFoundException("No investigation for this event.");
@@ -182,7 +193,7 @@ public sealed class InvestigationsController : ScopedControllerBase
         };
         _db.InvestigationWitnesses.Add(w);
 
-        Audit.Record("event", ev.Id, clientId, "witness_added",
+        Audit.Record("event", ev.Id, evClientId, "witness_added",
             $"Witness \"{req.WitnessName}\" added to investigation for {ev.PublicId}");
 
         await _db.SaveChangesAsync(ct);
@@ -191,12 +202,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     }
 
     [HttpPut("witnesses/{id:long}")]
-    public async Task<IActionResult> UpdateWitness(string publicId, long id, [FromBody] UpdateWitnessRequest req, CancellationToken ct)
+    public async Task<IActionResult> UpdateWitness(string publicId, long id, [FromBody] UpdateWitnessRequest req, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsInvestigatorOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var w = await _db.InvestigationWitnesses.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (w == null) throw new NotFoundException();
@@ -211,12 +221,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     }
 
     [HttpDelete("witnesses/{id:long}")]
-    public async Task<IActionResult> DeleteWitness(string publicId, long id, CancellationToken ct)
+    public async Task<IActionResult> DeleteWitness(string publicId, long id, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsManagerOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsManagerOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var w = await _db.InvestigationWitnesses.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (w == null) throw new NotFoundException();
@@ -229,12 +238,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     // ── Evidence ─────────────────────────────────────────────────────────────────
 
     [HttpGet("evidence")]
-    public async Task<IActionResult> GetEvidence(string publicId, CancellationToken ct)
+    public async Task<IActionResult> GetEvidence(string publicId, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsInvestigatorOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var inv = await _db.Investigations.AsNoTracking().FirstOrDefaultAsync(i => i.EventId == ev.Id, ct);
         if (inv == null) return Ok(Array.Empty<EvidenceDto>());
@@ -250,12 +258,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     }
 
     [HttpPost("evidence")]
-    public async Task<IActionResult> AddEvidence(string publicId, [FromBody] CreateEvidenceRequest req, CancellationToken ct)
+    public async Task<IActionResult> AddEvidence(string publicId, [FromBody] CreateEvidenceRequest req, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsInvestigatorOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var inv = await _db.Investigations.FirstOrDefaultAsync(i => i.EventId == ev.Id, ct);
         if (inv == null) throw new NotFoundException("No investigation for this event.");
@@ -280,7 +287,7 @@ public sealed class InvestigationsController : ScopedControllerBase
         };
         _db.InvestigationEvidence.Add(item);
 
-        Audit.Record("event", ev.Id, clientId, "evidence_added",
+        Audit.Record("event", ev.Id, evClientId, "evidence_added",
             $"Evidence \"{req.Title}\" added to investigation for {ev.PublicId}");
 
         await _db.SaveChangesAsync(ct);
@@ -289,12 +296,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     }
 
     [HttpPut("evidence/{id:long}")]
-    public async Task<IActionResult> UpdateEvidence(string publicId, long id, [FromBody] UpdateEvidenceRequest req, CancellationToken ct)
+    public async Task<IActionResult> UpdateEvidence(string publicId, long id, [FromBody] UpdateEvidenceRequest req, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsInvestigatorOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsInvestigatorOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var item = await _db.InvestigationEvidence.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (item == null) throw new NotFoundException();
@@ -310,12 +316,11 @@ public sealed class InvestigationsController : ScopedControllerBase
     }
 
     [HttpDelete("evidence/{id:long}")]
-    public async Task<IActionResult> DeleteEvidence(string publicId, long id, CancellationToken ct)
+    public async Task<IActionResult> DeleteEvidence(string publicId, long id, [FromQuery] long clientId = 0, CancellationToken ct = default)
     {
-        var (ev, clientId) = await ResolveEvent(publicId, ct);
+        var (ev, evClientId) = await ResolveEvent(publicId, clientId, ct);
         if (ev == null) throw new NotFoundException();
-        RequireClientAccess(clientId);
-        if (!await IsManagerOrAboveAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+        if (!await IsManagerOrAboveAsync(_db, evClientId, User, ct)) throw new ForbiddenException();
 
         var item = await _db.InvestigationEvidence.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (item == null) throw new NotFoundException();

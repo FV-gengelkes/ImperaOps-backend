@@ -295,6 +295,69 @@ public static class TemplateLibrary
         ]
     );
 
+    // ── SaaS / Software Operations ────────────────────────────────────────
+
+    private static readonly EventTemplateDefinition SaasOperations = new(
+        Id:          "saas-operations",
+        Name:        "SaaS / Software — Operations",
+        Description: "Operational incident management for SaaS and software companies. Covers " +
+                     "infrastructure outages, deployment failures, security incidents, customer " +
+                     "escalations, vendor issues, compliance work, and data integrity events. " +
+                     "Includes severity tracking, product/team assignment, and SLA deadlines.",
+        Industry:    "Software / SaaS",
+
+        EventTypes: [
+            new("infrastructure", "Infrastructure",  1),
+            new("deployment",     "Deployment",      2),
+            new("security",       "Security",        3),
+            new("compliance",     "Compliance",      4),
+            new("customer",       "Customer",        5),
+            new("data",           "Data",            6),
+            new("vendor",         "Vendor",          7),
+            new("operational",    "Operational",     8),
+        ],
+
+        WorkflowStatuses: [
+            new("open",           "Open",           "#3B82F6", false, 1),
+            new("acknowledged",   "Acknowledged",   "#F59E0B", false, 2),
+            new("investigating",  "Investigating",  "#8B5CF6", false, 3),
+            new("mitigated",      "Mitigated",      "#14B8A6", false, 4),
+            new("resolved",       "Resolved",       "#16A34A", true,  5),
+            new("closed",         "Closed",         "#64748B", true,  6),
+        ],
+
+        WorkflowTransitions: [
+            new(null,             "open",           null,                 IsDefault: true),
+            new("open",           "acknowledged",   "Acknowledge"),
+            new("acknowledged",   "investigating",  "Begin Investigation"),
+            new("investigating",  "mitigated",      "Mitigate"),
+            new("mitigated",      "resolved",       "Resolve"),
+            new("resolved",       "closed",         "Close"),
+            // Skip-ahead shortcuts
+            new("open",           "investigating",  "Investigate"),
+            new("investigating",  "resolved",       "Resolve"),
+            new("acknowledged",   "resolved",       "Resolve"),
+            new("open",           "closed",         "Close"),
+        ],
+
+        CustomFields: [
+            new("Severity",        "dropdown", true,  1, "[\"Critical\",\"High\",\"Medium\",\"Low\"]"),
+            new("Product",         "dropdown", false, 2, "[\"Platform\",\"API\",\"Dashboard\",\"Integrations\",\"Data Pipeline\",\"Auth / SSO\"]"),
+            new("Team",            "dropdown", false, 3, "[\"Engineering\",\"Platform / DevOps\",\"Support\",\"Customer Success\",\"Compliance\",\"Security\",\"Product\",\"Leadership\"]"),
+            new("Customer Impact", "dropdown", false, 4, "[\"None\",\"Low - Few Users\",\"Medium - Many Users\",\"High - All Users\",\"Strategic Account\"]"),
+            new("External Ticket", "url",      false, 5),
+        ],
+
+        SlaRules: [
+            new("Default SLA",              null,               4,  48),
+            new("Critical Infrastructure",  "infrastructure",   1,  4),
+            new("Security Incidents",       "security",         1,  8),
+            new("Customer Escalations",     "customer",         2,  24),
+            new("Data Incidents",           "data",             2,  12),
+            new("Compliance Items",         "compliance",       4,  72),
+        ]
+    );
+
     public static readonly IReadOnlyDictionary<string, EventTemplateDefinition> All =
         new Dictionary<string, EventTemplateDefinition>
         {
@@ -302,5 +365,6 @@ public static class TemplateLibrary
             [ConstructionSafety.Id]    = ConstructionSafety,
             [FacilitiesManagement.Id]  = FacilitiesManagement,
             [ManufacturingSafety.Id]   = ManufacturingSafety,
+            [SaasOperations.Id]        = SaasOperations,
         };
 }

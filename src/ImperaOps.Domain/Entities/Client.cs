@@ -26,6 +26,9 @@ public sealed class Client : ISoftDeletable
     public long? DefaultInboundEventTypeId { get; set; }
     /// <summary>Default workflow status assigned to email-created events. Null = use first open status.</summary>
     public long? DefaultInboundWorkflowStatusId { get; set; }
+    // ── Public API ────────────────────────────────────────────────────────────
+    /// <summary>Stable public SID for API auth, e.g. "csid_29f4a7c1d8ab42e7".</summary>
+    public string ClientSid { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
 }

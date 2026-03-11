@@ -26,14 +26,21 @@ public sealed class TasksController : ScopedControllerBase
         _notifications = notifications;
     }
 
+    private async Task<Event> ResolveEventAsync(string publicId, CancellationToken ct)
+    {
+        var ev = await _db.Events.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
+        if (ev is null) throw new NotFoundException();
+        RequireClientAccess(ev.ClientId);
+        return ev;
+    }
+
     [Authorize]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<TaskDto>>> GetTasks(
         string publicId, CancellationToken ct)
     {
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null) throw new NotFoundException();
-        RequireClientAccess(ev.ClientId);
+        var ev = await ResolveEventAsync(publicId, ct);
 
         var tasks = await _db.Tasks
             .AsNoTracking()
@@ -61,9 +68,7 @@ public sealed class TasksController : ScopedControllerBase
     {
         if (string.IsNullOrWhiteSpace(req.Title)) throw new ValidationException("Title is required.");
 
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null) throw new NotFoundException();
-        RequireClientAccess(ev.ClientId);
+        var ev = await ResolveEventAsync(publicId, ct);
         if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var result = await _mediator.Send(new CreateTaskCommand(
@@ -90,9 +95,7 @@ public sealed class TasksController : ScopedControllerBase
     public async Task<IActionResult> UpdateTask(
         string publicId, string taskPublicId, [FromBody] UpdateTaskRequest req, CancellationToken ct)
     {
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null) throw new NotFoundException();
-        RequireClientAccess(ev.ClientId);
+        var ev = await ResolveEventAsync(publicId, ct);
         if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
@@ -126,9 +129,7 @@ public sealed class TasksController : ScopedControllerBase
     public async Task<IActionResult> CompleteTask(
         string publicId, string taskPublicId, CancellationToken ct)
     {
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null) throw new NotFoundException();
-        RequireClientAccess(ev.ClientId);
+        var ev = await ResolveEventAsync(publicId, ct);
         if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
@@ -148,9 +149,7 @@ public sealed class TasksController : ScopedControllerBase
     public async Task<IActionResult> UncompleteTask(
         string publicId, string taskPublicId, CancellationToken ct)
     {
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null) throw new NotFoundException();
-        RequireClientAccess(ev.ClientId);
+        var ev = await ResolveEventAsync(publicId, ct);
         if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
@@ -170,9 +169,7 @@ public sealed class TasksController : ScopedControllerBase
     public async Task<IActionResult> ReorderTasks(
         string publicId, [FromBody] ReorderTasksRequest req, CancellationToken ct)
     {
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null) throw new NotFoundException();
-        RequireClientAccess(ev.ClientId);
+        var ev = await ResolveEventAsync(publicId, ct);
 
         var tasks = await _db.Tasks
             .Where(t => t.EventId == ev.Id)
@@ -194,9 +191,7 @@ public sealed class TasksController : ScopedControllerBase
     public async Task<IActionResult> DeleteTask(
         string publicId, string taskPublicId, CancellationToken ct)
     {
-        var ev = await _db.Events.AsNoTracking().FirstOrDefaultAsync(e => e.PublicId == publicId, ct);
-        if (ev is null) throw new NotFoundException();
-        RequireClientAccess(ev.ClientId);
+        var ev = await ResolveEventAsync(publicId, ct);
         if (!await IsInvestigatorOrAboveAsync(_db, ev.ClientId, User, ct)) throw new ForbiddenException();
 
         var task = await _db.Tasks.AsNoTracking()
