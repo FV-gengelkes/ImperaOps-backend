@@ -76,6 +76,7 @@ public sealed class AdminClientsController(
         {
             Name           = req.Name.Trim(),
             Slug           = GenerateSlug(req.Name),
+            ClientSid      = $"csid_{Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(8)).ToLower()}",
             ParentClientId = req.ParentClientId,
             Status         = req.Status ?? "Active",
             CreatedAt      = DateTimeOffset.UtcNow,
