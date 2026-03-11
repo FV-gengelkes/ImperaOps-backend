@@ -185,6 +185,39 @@ public sealed class AdminUsersController(
         return NoContent();
     }
 
+    [HttpDelete("users/{id:long}")]
+    public async Task<IActionResult> DeleteUser(long id, [FromQuery] long? clientId, CancellationToken ct)
+    {
+        var user = await db.Users.FindAsync([id], ct);
+        if (user is null) throw new NotFoundException();
+
+        // Prevent deleting yourself
+        if (user.Id == CurrentUser.Id)
+            throw new ValidationException("You cannot delete your own account.");
+
+        user.DeletedAt = DateTimeOffset.UtcNow;
+        user.IsActive  = false;
+
+        // Also soft-delete all client access
+        var accesses = await db.UserClientAccess
+            .Where(a => a.UserId == id)
+            .ToListAsync(ct);
+        foreach (var access in accesses)
+            access.DeletedAt = DateTimeOffset.UtcNow;
+
+        // Invalidate all tokens
+        var tokens = await db.UserTokens
+            .Where(t => t.UserId == id)
+            .ToListAsync(ct);
+        foreach (var token in tokens)
+            token.DeletedAt = DateTimeOffset.UtcNow;
+
+        Audit.Record("user", id, clientId ?? 0, "deleted",
+            $"User \"{user.DisplayName}\" ({user.Email}) deleted.");
+        await db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     [HttpPost("users/{id:long}/totp/disable")]
     public async Task<IActionResult> DisableTotp(long id, [FromQuery] long? clientId, CancellationToken ct)
     {
