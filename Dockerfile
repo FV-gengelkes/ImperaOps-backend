@@ -8,6 +8,9 @@ COPY src/ImperaOps.Api/ImperaOps.Api.csproj src/ImperaOps.Api/
 COPY src/ImperaOps.Application/ImperaOps.Application.csproj src/ImperaOps.Application/
 COPY src/ImperaOps.Domain/ImperaOps.Domain.csproj src/ImperaOps.Domain/
 COPY src/ImperaOps.Infrastructure/ImperaOps.Infrastructure.csproj src/ImperaOps.Infrastructure/
+COPY tests/ImperaOps.Api.Tests/ImperaOps.Api.Tests.csproj tests/ImperaOps.Api.Tests/
+COPY tests/ImperaOps.Application.Tests/ImperaOps.Application.Tests.csproj tests/ImperaOps.Application.Tests/
+COPY tests/ImperaOps.Infrastructure.Tests/ImperaOps.Infrastructure.Tests.csproj tests/ImperaOps.Infrastructure.Tests/
 
 # Restore dependencies
 RUN dotnet restore ImperaOps.Backend.sln
