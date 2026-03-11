@@ -2,7 +2,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Copy project files first for layer caching
+# Copy build props and project files first for layer caching
+COPY Directory.Build.props ./
 COPY src/ImperaOps.Api/ImperaOps.Api.csproj src/ImperaOps.Api/
 COPY src/ImperaOps.Application/ImperaOps.Application.csproj src/ImperaOps.Application/
 COPY src/ImperaOps.Domain/ImperaOps.Domain.csproj src/ImperaOps.Domain/
