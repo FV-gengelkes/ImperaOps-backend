@@ -8,5 +8,4 @@ docker-compose*.yml
 Dockerfile
 .dockerignore
 .gitignore
-tests/**/bin/
-tests/**/obj/
+tests/
