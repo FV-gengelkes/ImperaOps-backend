@@ -18,8 +18,15 @@ public sealed class ClientAdminService(
 
         var now = DateTimeOffset.UtcNow;
 
-        // ── Event types ──────────────────────────────────────────────────
+        // ── Event types (skip if already exist for this client) ────────
+        var existingEventTypes = await db.EventTypes
+            .Where(e => e.ClientId == clientId)
+            .Select(e => e.Name)
+            .ToListAsync(ct);
+        var existingEtNames = new HashSet<string>(existingEventTypes, StringComparer.OrdinalIgnoreCase);
+
         var etEntities = template.EventTypes
+            .Where(et => !existingEtNames.Contains(et.Name))
             .Select(et => new EventType
             {
                 ClientId  = clientId,
@@ -35,12 +42,25 @@ public sealed class ClientAdminService(
         foreach (var et in etEntities) db.EventTypes.Add(et);
         await db.SaveChangesAsync(ct);
 
+        // Build key→id map from ALL client event types (existing + newly created)
+        var allClientEventTypes = await db.EventTypes
+            .Where(e => e.ClientId == clientId)
+            .Select(e => new { e.Name, e.Id })
+            .ToListAsync(ct);
+        var etNameToId = allClientEventTypes.ToDictionary(e => e.Name, e => e.Id, StringComparer.OrdinalIgnoreCase);
         var eventTypeKeyToId = template.EventTypes
-            .Zip(etEntities, (t, e) => (t.Key, e.Id))
-            .ToDictionary(x => x.Key, x => x.Id);
+            .Where(t => etNameToId.ContainsKey(t.Name))
+            .ToDictionary(t => t.Key, t => etNameToId[t.Name]);
 
-        // ── Workflow statuses ────────────────────────────────────────────
+        // ── Workflow statuses (skip if already exist for this client) ───
+        var existingStatuses = await db.WorkflowStatuses
+            .Where(s => s.ClientId == clientId)
+            .Select(s => s.Name)
+            .ToListAsync(ct);
+        var existingWsNames = new HashSet<string>(existingStatuses, StringComparer.OrdinalIgnoreCase);
+
         var wsEntities = template.WorkflowStatuses
+            .Where(ws => !existingWsNames.Contains(ws.Name))
             .Select(ws => new WorkflowStatus
             {
                 ClientId  = clientId,
@@ -58,9 +78,15 @@ public sealed class ClientAdminService(
         foreach (var ws in wsEntities) db.WorkflowStatuses.Add(ws);
         await db.SaveChangesAsync(ct);
 
+        // Build key→id map from ALL client workflow statuses (existing + newly created)
+        var allClientStatuses = await db.WorkflowStatuses
+            .Where(s => s.ClientId == clientId)
+            .Select(s => new { s.Name, s.Id })
+            .ToListAsync(ct);
+        var wsNameToId = allClientStatuses.ToDictionary(s => s.Name, s => s.Id, StringComparer.OrdinalIgnoreCase);
         var statusMap = template.WorkflowStatuses
-            .Zip(wsEntities, (t, e) => (t.Key, e.Id))
-            .ToDictionary(x => x.Key, x => x.Id);
+            .Where(t => wsNameToId.ContainsKey(t.Name))
+            .ToDictionary(t => t.Key, t => wsNameToId[t.Name]);
 
         // ── Transitions ──────────────────────────────────────────────────
         foreach (var wt in template.WorkflowTransitions)
