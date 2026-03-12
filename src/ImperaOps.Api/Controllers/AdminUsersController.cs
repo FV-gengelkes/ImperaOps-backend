@@ -198,6 +198,9 @@ public sealed class AdminUsersController(
         user.DeletedAt = DateTimeOffset.UtcNow;
         user.IsActive  = false;
 
+        // Mangle email to free it for reuse (MySQL unique index doesn't support partial indexes)
+        user.Email = $"{user.Email}_deleted_{user.Id}";
+
         // Also soft-delete all client access
         var accesses = await db.UserClientAccess
             .Where(a => a.UserId == id)
