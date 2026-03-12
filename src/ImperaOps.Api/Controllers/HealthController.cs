@@ -10,6 +10,12 @@ public sealed class HealthController : ControllerBase
 {
     private readonly HealthCheckService _health;
 
+    // Captured once at startup — changes only when a new image is deployed.
+    private static readonly string BuildTimestamp =
+        System.IO.File.Exists("/app/build-id")
+            ? System.IO.File.ReadAllText("/app/build-id").Trim()
+            : DateTimeOffset.UtcNow.ToString("o");
+
     public HealthController(HealthCheckService health)
         => _health = health;
 
@@ -32,6 +38,10 @@ public sealed class HealthController : ControllerBase
                 })
         });
     }
+
+    /// <summary>Returns the build version for deployment detection.</summary>
+    [HttpGet("version")]
+    public IActionResult Version() => Ok(new { buildId = BuildTimestamp });
 
     /// <summary>Database connectivity check.</summary>
     [HttpGet("db")]

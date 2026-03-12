@@ -22,6 +22,9 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
+# Write a build ID for version detection (used by /health/version)
+RUN date -u +"%Y-%m-%dT%H:%M:%SZ" > /app/build-id
+
 ENV ASPNETCORE_URLS=http://+:5000
 ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 5000
