@@ -131,7 +131,7 @@ public sealed class AuthController : ControllerBase
     [Authorize]
     [HttpPut("password")]
     public async Task<IActionResult> ChangePassword(
-        [FromBody] ChangePasswordRequest req, CancellationToken ct)
+        [FromBody] SelfChangePasswordRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.CurrentPassword))
             throw new ValidationException("Current password is required.");
@@ -323,7 +323,7 @@ public sealed class AuthController : ControllerBase
 }
 
 public sealed record UpdateProfileRequest(string DisplayName, string Email);
-public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public sealed record SelfChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ForgotPasswordRequest(string Email);
 public sealed record SetPasswordRequest(string Token, string NewPassword);
 public sealed record SetActiveClientRequest(long ClientId);
