@@ -11,7 +11,8 @@ public sealed record EventTemplateDefinition(
     IReadOnlyList<TemplateWorkflowStatus>   WorkflowStatuses,
     IReadOnlyList<TemplateWorkflowTransition> WorkflowTransitions,
     IReadOnlyList<TemplateCustomField>      CustomFields,
-    IReadOnlyList<TemplateSlaRule>           SlaRules
+    IReadOnlyList<TemplateSlaRule>           SlaRules,
+    IReadOnlyList<TemplateWorkflowRule>     WorkflowRules
 );
 
 public sealed record TemplateEventType(string Key, string Name, int SortOrder);
@@ -27,6 +28,34 @@ public sealed record TemplateCustomField(
 
 public sealed record TemplateSlaRule(
     string Name, string? EventTypeKey, int? InvestigationHours, int? ClosureHours);
+
+/// <summary>
+/// A pre-built workflow rule to be created when a template is applied.
+/// Conditions and actions use template keys (e.g. event type key, status key)
+/// that get resolved to real IDs during application.
+/// </summary>
+public sealed record TemplateWorkflowRule(
+    string Name,
+    string? Description,
+    string TriggerType,
+    int SortOrder,
+    bool StopOnMatch,
+    IReadOnlyList<TemplateRuleCondition> Conditions,
+    IReadOnlyList<TemplateRuleAction> Actions
+);
+
+public sealed record TemplateRuleCondition(string Field, string Operator, string? Value = null);
+
+public sealed record TemplateRuleAction(
+    string Type,
+    string? StatusKey = null,
+    string? TaskTitle = null,
+    string? TaskDescription = null,
+    int? TaskDueDaysFromNow = null,
+    string[]? NotifyRoles = null,
+    string? NotificationMessage = null,
+    string? CommentBody = null
+);
 
 // ── Library ───────────────────────────────────────────────────────────────────
 
@@ -88,7 +117,35 @@ public static class TemplateLibrary
                 "[\"Driver Error\",\"Mechanical Failure\",\"Weather\",\"Road Conditions\",\"External Factor\",\"Other\"]"),
         ],
 
-        SlaRules: []
+        SlaRules: [],
+
+        WorkflowRules: [
+            new("Auto-escalate vehicle accidents",
+                "Escalate and notify managers when a vehicle accident is reported",
+                "event.created", 1, false,
+                [new("event_type_id", "equals", "vehicle_accident")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A vehicle accident has been reported and requires immediate attention."),
+                    new("create_task", TaskTitle: "Review accident report and contact driver",
+                        TaskDueDaysFromNow: 1),
+                ]),
+            new("Notify on HOS violation",
+                "Alert managers when an Hours of Service violation is logged",
+                "event.created", 2, false,
+                [new("event_type_id", "equals", "hos_violation")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "An HOS violation has been reported — review for DOT compliance."),
+                ]),
+            new("Auto-comment on escalation",
+                "Add a tracking comment when an event is escalated",
+                "event.status_changed", 3, false,
+                [new("workflow_status_id", "equals", "escalated")],
+                [
+                    new("add_comment", CommentBody: "This event has been escalated for priority review."),
+                ]),
+        ]
     );
 
     // ── Construction Safety ─────────────────────────────────────────────────
@@ -154,6 +211,37 @@ public static class TemplateLibrary
             new("Fall Incidents",                 "fall",       2,   48),
             new("Electrical Hazards",             "electrical", 2,   48),
             new("Caught-In / Between Incidents",  "caught_in",  2,   48),
+        ],
+
+        WorkflowRules: [
+            new("Escalate fall incidents",
+                "Immediately escalate falls from height to safety team",
+                "event.created", 1, false,
+                [new("event_type_id", "equals", "fall")],
+                [
+                    new("change_status", StatusKey: "escalated"),
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A fall incident has been reported and auto-escalated to safety."),
+                    new("create_task", TaskTitle: "Conduct fall protection audit at incident location",
+                        TaskDueDaysFromNow: 2),
+                ]),
+            new("Track OSHA-recordable events",
+                "Add review task when a caught-in or struck-by event is created",
+                "event.created", 2, false,
+                [new("event_type_id", "in", "caught_in,struck_by")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A high-severity incident type has been reported — check OSHA recordability."),
+                    new("create_task", TaskTitle: "Determine OSHA recordability and file if required",
+                        TaskDueDaysFromNow: 3),
+                ]),
+            new("Auto-comment on escalation",
+                "Add a tracking comment when an event is escalated to safety",
+                "event.status_changed", 3, false,
+                [new("workflow_status_id", "equals", "escalated")],
+                [
+                    new("add_comment", CommentBody: "This event has been escalated to the safety team for priority review."),
+                ]),
         ]
     );
 
@@ -222,6 +310,38 @@ public static class TemplateLibrary
             new("Fire Events",       "fire",            1,   24),
             new("Security Breaches", "security_breach",  1,   48),
             new("Elevator Issues",   "elevator",         2,   72),
+        ],
+
+        WorkflowRules: [
+            new("Auto-escalate fire events",
+                "Immediately escalate fire/smoke events and notify management",
+                "event.created", 1, false,
+                [new("event_type_id", "equals", "fire")],
+                [
+                    new("change_status", StatusKey: "escalated"),
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A fire/smoke event has been reported and auto-escalated."),
+                ]),
+            new("Security breach response",
+                "Notify managers and create investigation task for security breaches",
+                "event.created", 2, false,
+                [new("event_type_id", "equals", "security_breach")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A security breach has been reported — immediate review required."),
+                    new("create_task", TaskTitle: "Review security footage and assess breach scope",
+                        TaskDueDaysFromNow: 1),
+                ]),
+            new("Elevator issue notification",
+                "Notify management when elevator/escalator issues are reported",
+                "event.created", 3, false,
+                [new("event_type_id", "equals", "elevator")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager"],
+                        NotificationMessage: "An elevator/escalator issue has been reported — arrange vendor inspection."),
+                    new("create_task", TaskTitle: "Contact elevator maintenance vendor",
+                        TaskDueDaysFromNow: 1),
+                ]),
         ]
     );
 
@@ -292,6 +412,39 @@ public static class TemplateLibrary
             new("LOTO Violations",         "loto_violation",   2,   48),
             new("Fire / Explosion Events", "fire_explosion",   1,   24),
             new("Chemical Exposures",      "chemical_exposure", 2,   72),
+        ],
+
+        WorkflowRules: [
+            new("Auto-escalate LOTO violations",
+                "Lockout/tagout violations are critical — escalate immediately",
+                "event.created", 1, false,
+                [new("event_type_id", "equals", "loto_violation")],
+                [
+                    new("change_status", StatusKey: "escalated"),
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A lockout/tagout violation has been reported and auto-escalated to EHS."),
+                    new("create_task", TaskTitle: "Conduct LOTO compliance audit on affected equipment",
+                        TaskDueDaysFromNow: 2),
+                ]),
+            new("Fire/explosion immediate response",
+                "Auto-escalate and notify for fire or explosion events",
+                "event.created", 2, false,
+                [new("event_type_id", "equals", "fire_explosion")],
+                [
+                    new("change_status", StatusKey: "escalated"),
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A fire/explosion event has been reported — emergency response may be required."),
+                ]),
+            new("Machine injury review task",
+                "Create an investigation task for machine/equipment injuries",
+                "event.created", 3, false,
+                [new("event_type_id", "equals", "machine_injury")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager"],
+                        NotificationMessage: "A machine/equipment injury has been reported."),
+                    new("create_task", TaskTitle: "Inspect machine guarding and safety interlocks",
+                        TaskDueDaysFromNow: 2),
+                ]),
         ]
     );
 
@@ -355,6 +508,38 @@ public static class TemplateLibrary
             new("Customer Escalations",     "customer",         2,  24),
             new("Data Incidents",           "data",             2,  12),
             new("Compliance Items",         "compliance",       4,  72),
+        ],
+
+        WorkflowRules: [
+            new("Auto-acknowledge infrastructure incidents",
+                "Move infrastructure events to Acknowledged status immediately",
+                "event.created", 1, false,
+                [new("event_type_id", "equals", "infrastructure")],
+                [
+                    new("change_status", StatusKey: "acknowledged"),
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "An infrastructure incident has been reported and auto-acknowledged."),
+                ]),
+            new("Security incident response",
+                "Escalate security incidents and create triage task",
+                "event.created", 2, false,
+                [new("event_type_id", "equals", "security")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager", "Admin"],
+                        NotificationMessage: "A security incident has been reported — initiate incident response."),
+                    new("create_task", TaskTitle: "Assess security impact and determine if customer data is affected",
+                        TaskDueDaysFromNow: 1),
+                ]),
+            new("Customer escalation tracking",
+                "Create follow-up task for customer-reported incidents",
+                "event.created", 3, false,
+                [new("event_type_id", "equals", "customer")],
+                [
+                    new("send_notification", NotifyRoles: ["Manager"],
+                        NotificationMessage: "A customer escalation has been created."),
+                    new("create_task", TaskTitle: "Send initial customer communication within 1 hour",
+                        TaskDueDaysFromNow: 1),
+                ]),
         ]
     );
 

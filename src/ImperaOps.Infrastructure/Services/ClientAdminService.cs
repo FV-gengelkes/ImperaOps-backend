@@ -1,7 +1,9 @@
+using System.Text.Json;
 using ImperaOps.Application.Abstractions;
 using ImperaOps.Domain.Entities;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Templates;
+using ImperaOps.Infrastructure.Workflows;
 using Microsoft.EntityFrameworkCore;
 
 namespace ImperaOps.Infrastructure.Services;
@@ -131,6 +133,64 @@ public sealed class ClientAdminService(
                 InvestigationHours = sla.InvestigationHours,
                 ClosureHours       = sla.ClosureHours,
                 CreatedAt          = now,
+            });
+        }
+
+        // ── Workflow rules ─────────────────────────────────────────────
+        var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+        foreach (var wr in template.WorkflowRules)
+        {
+            // Resolve condition values from template keys → real IDs
+            var conditions = wr.Conditions.Select(c =>
+            {
+                var value = c.Value;
+                if (value != null)
+                {
+                    if (c.Field == "event_type_id")
+                    {
+                        // Could be comma-separated for "in" operator
+                        value = string.Join(",", value.Split(',')
+                            .Select(k => eventTypeKeyToId.TryGetValue(k.Trim(), out var id) ? id.ToString() : k.Trim()));
+                    }
+                    else if (c.Field == "workflow_status_id")
+                    {
+                        value = string.Join(",", value.Split(',')
+                            .Select(k => statusMap.TryGetValue(k.Trim(), out var id) ? id.ToString() : k.Trim()));
+                    }
+                }
+                return new WorkflowCondition { Field = c.Field, Operator = c.Operator, Value = value };
+            }).ToList();
+
+            // Resolve action configs from template keys → real IDs
+            var actions = wr.Actions.Select(a =>
+            {
+                var config = new WorkflowActionConfig();
+                if (a.StatusKey != null && statusMap.TryGetValue(a.StatusKey, out var statusId))
+                    config.WorkflowStatusId = statusId;
+                if (a.TaskTitle != null) config.TaskTitle = a.TaskTitle;
+                if (a.TaskDescription != null) config.TaskDescription = a.TaskDescription;
+                if (a.TaskDueDaysFromNow != null) config.TaskDueDaysFromNow = a.TaskDueDaysFromNow;
+                if (a.NotifyRoles != null) config.NotifyRoles = a.NotifyRoles;
+                if (a.NotificationMessage != null) config.NotificationMessage = a.NotificationMessage;
+                if (a.CommentBody != null) config.CommentBody = a.CommentBody;
+                return new WorkflowAction { Type = a.Type, Config = config };
+            }).ToList();
+
+            db.WorkflowRules.Add(new WorkflowRule
+            {
+                ClientId       = clientId,
+                Name           = wr.Name,
+                Description    = wr.Description,
+                TriggerType    = wr.TriggerType,
+                SortOrder      = wr.SortOrder,
+                StopOnMatch    = wr.StopOnMatch,
+                IsActive       = true,
+                IsSeedData     = true,
+                ConditionsJson = JsonSerializer.Serialize(conditions, jsonOpts),
+                ActionsJson    = JsonSerializer.Serialize(actions, jsonOpts),
+                CreatedAt      = now,
+                UpdatedAt      = now,
             });
         }
 
