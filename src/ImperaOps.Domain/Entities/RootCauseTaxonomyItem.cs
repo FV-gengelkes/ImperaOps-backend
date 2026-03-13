@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class RootCauseTaxonomyItem : ISoftDeletable
+public sealed class RootCauseTaxonomyItem : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     public long ClientId { get; set; }
@@ -8,4 +8,5 @@ public sealed class RootCauseTaxonomyItem : ISoftDeletable
     public int SortOrder { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class WorkflowTransition : ISoftDeletable
+public sealed class WorkflowTransition : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     public long ClientId { get; set; }
@@ -13,4 +13,5 @@ public sealed class WorkflowTransition : ISoftDeletable
     public string? Label { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

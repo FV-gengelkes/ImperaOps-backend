@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class Investigation : ISoftDeletable
+public sealed class Investigation : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     public long ClientId { get; set; }
@@ -16,4 +16,5 @@ public sealed class Investigation : ISoftDeletable
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

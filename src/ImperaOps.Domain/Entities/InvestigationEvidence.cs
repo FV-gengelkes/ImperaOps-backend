@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class InvestigationEvidence : ISoftDeletable
+public sealed class InvestigationEvidence : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     public long InvestigationId { get; set; }
@@ -14,4 +14,5 @@ public sealed class InvestigationEvidence : ISoftDeletable
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

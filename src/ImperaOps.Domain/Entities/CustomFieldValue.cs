@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class CustomFieldValue : ISoftDeletable
+public sealed class CustomFieldValue : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     /// <summary>References Events.Id (previously IncidentId).</summary>
@@ -14,4 +14,5 @@ public sealed class CustomFieldValue : ISoftDeletable
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

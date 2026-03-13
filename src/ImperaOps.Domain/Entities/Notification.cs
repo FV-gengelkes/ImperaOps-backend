@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class Notification : ISoftDeletable
+public sealed class Notification : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     public long UserId { get; set; }
@@ -13,4 +13,5 @@ public sealed class Notification : ISoftDeletable
     public bool IsRead { get; set; } = false;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

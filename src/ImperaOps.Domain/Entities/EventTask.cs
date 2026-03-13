@@ -1,7 +1,7 @@
 namespace ImperaOps.Domain.Entities;
 
 /// <summary>A task attached to an event. Named EventTask to avoid conflict with System.Threading.Tasks.Task.</summary>
-public sealed class EventTask : ISoftDeletable
+public sealed class EventTask : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     public long ClientId { get; set; }
@@ -17,4 +17,5 @@ public sealed class EventTask : ISoftDeletable
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

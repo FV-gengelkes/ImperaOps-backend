@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class WorkflowStatus : ISoftDeletable
+public sealed class WorkflowStatus : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     /// <summary>0 = system default, otherwise a specific client.</summary>
@@ -15,4 +15,5 @@ public sealed class WorkflowStatus : ISoftDeletable
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

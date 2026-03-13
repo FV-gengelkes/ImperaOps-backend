@@ -478,5 +478,15 @@ public sealed class ImperaOpsDbContext : DbContext
             b.HasIndex(x => x.EventId);
             b.HasIndex(x => new { x.ClientId, x.ExecutedAt });
         });
+
+        // Convention: all ISeedable entities get IsSeedData column with default false
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(ISeedable).IsAssignableFrom(entityType.ClrType))
+            {
+                modelBuilder.Entity(entityType.ClrType)
+                    .Property(nameof(ISeedable.IsSeedData)).HasDefaultValue(false);
+            }
+        }
     }
 }

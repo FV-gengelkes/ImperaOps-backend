@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class EventType : ISoftDeletable
+public sealed class EventType : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     /// <summary>0 = system default, otherwise a specific client.</summary>
@@ -12,4 +12,5 @@ public sealed class EventType : ISoftDeletable
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }

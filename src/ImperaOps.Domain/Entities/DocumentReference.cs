@@ -1,6 +1,6 @@
 namespace ImperaOps.Domain.Entities;
 
-public sealed class DocumentReference : ISoftDeletable
+public sealed class DocumentReference : ISoftDeletable, ISeedable
 {
     public long Id { get; set; }
     public long ClientId { get; set; }
@@ -10,4 +10,5 @@ public sealed class DocumentReference : ISoftDeletable
     public long? CreatedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public bool IsSeedData { get; set; }
 }
