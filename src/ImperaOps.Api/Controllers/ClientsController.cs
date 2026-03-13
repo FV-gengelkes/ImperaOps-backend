@@ -1,9 +1,11 @@
 using ImperaOps.Api.Contracts;
+using ImperaOps.Application.Abstractions;
 using ImperaOps.Domain.Entities;
 using ImperaOps.Domain.Exceptions;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Email;
 using ImperaOps.Infrastructure.Storage;
+using ImperaOps.Infrastructure.Templates;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -11,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace ImperaOps.Api.Controllers;
 
@@ -22,13 +25,15 @@ public sealed class ClientsController : ScopedControllerBase
     private readonly IEmailService _email;
     private readonly IConfiguration _config;
     private readonly IStorageService _storage;
+    private readonly IClientAdminService _clientAdmin;
 
-    public ClientsController(ImperaOpsDbContext db, IEmailService email, IConfiguration config, IStorageService storage)
+    public ClientsController(ImperaOpsDbContext db, IEmailService email, IConfiguration config, IStorageService storage, IClientAdminService clientAdmin)
     {
-        _db      = db;
-        _email   = email;
-        _config  = config;
-        _storage = storage;
+        _db          = db;
+        _email       = email;
+        _config      = config;
+        _storage     = storage;
+        _clientAdmin = clientAdmin;
     }
 
     /// <summary>
@@ -235,6 +240,64 @@ public sealed class ClientsController : ScopedControllerBase
         var bytes = RandomNumberGenerator.GetBytes(32);
         return Convert.ToBase64String(bytes)
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    }
+
+    // ── Templates (client-scoped, for onboarding wizard) ──────────────
+
+    /// <summary>Returns available industry templates for client admins.</summary>
+    [Authorize]
+    [HttpGet("{clientId:long}/templates")]
+    public async Task<IActionResult> GetTemplates(long clientId, CancellationToken ct)
+    {
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+
+        var result = TemplateLibrary.All.Values
+            .OrderBy(t => t.Name)
+            .Select(t => new EventTemplateListItemDto(
+                t.Id, t.Name, t.Description, t.Industry,
+                t.EventTypes.Count, t.WorkflowStatuses.Count, t.CustomFields.Count))
+            .ToList();
+        return Ok(result);
+    }
+
+    /// <summary>Applies an industry template to this client.</summary>
+    [Authorize]
+    [HttpPost("{clientId:long}/apply-template/{templateId}")]
+    public async Task<IActionResult> ApplyTemplate(
+        long clientId, string templateId, CancellationToken ct)
+    {
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+
+        if (!TemplateLibrary.All.TryGetValue(templateId, out var template))
+            throw new NotFoundException("Template not found.");
+
+        var client = await _db.Clients.FindAsync([clientId], ct);
+        if (client is null) throw new NotFoundException("Client not found.");
+
+        var applied = ParseAppliedTemplateIds(client.AppliedTemplateIds);
+        if (applied.Contains(templateId))
+            throw new ConflictException($"Template \"{template.Name}\" has already been applied.");
+
+        await _clientAdmin.ApplyTemplateAsync(clientId, templateId, ct,
+            ownerUserId: CurrentUserId());
+
+        var updated = applied.Append(templateId).ToList();
+        client.AppliedTemplateIds = JsonSerializer.Serialize(updated);
+
+        Audit.Record("client", clientId, clientId, "template_applied",
+            $"Template \"{template.Name}\" applied via onboarding.");
+        await _db.SaveChangesAsync(ct);
+
+        return NoContent();
+    }
+
+    private static IReadOnlyList<string> ParseAppliedTemplateIds(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch { return []; }
     }
 
     /// <summary>
