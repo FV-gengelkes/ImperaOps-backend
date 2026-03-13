@@ -406,6 +406,84 @@ public sealed class ClientsController : ScopedControllerBase
         return NoContent();
     }
 
+    // ── Report schedule ────────────────────────────────────────────────
+
+    [Authorize]
+    [HttpGet("{clientId:long}/report-schedule")]
+    public async Task<IActionResult> GetReportSchedule(long clientId, CancellationToken ct)
+    {
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+
+        var schedule = await _db.ReportSchedules.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.ClientId == clientId, ct);
+        if (schedule is null) throw new NotFoundException();
+
+        return Ok(new ReportScheduleDto(schedule.Frequency, schedule.DayOfWeek, schedule.DayOfMonth, schedule.IsEnabled, schedule.LastSentAt));
+    }
+
+    [Authorize]
+    [HttpPut("{clientId:long}/report-schedule")]
+    public async Task<IActionResult> UpsertReportSchedule(
+        long clientId, [FromBody] UpsertReportScheduleRequest req, CancellationToken ct)
+    {
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+
+        var freq = req.Frequency?.Trim().ToLowerInvariant();
+        if (freq is not "weekly" and not "monthly")
+            throw new ValidationException("Frequency must be 'weekly' or 'monthly'.");
+        if (freq == "weekly" && (req.DayOfWeek < 0 || req.DayOfWeek > 6))
+            throw new ValidationException("DayOfWeek must be 0-6.");
+        if (freq == "monthly" && (req.DayOfMonth < 1 || req.DayOfMonth > 28))
+            throw new ValidationException("DayOfMonth must be 1-28.");
+
+        var schedule = await _db.ReportSchedules
+            .FirstOrDefaultAsync(s => s.ClientId == clientId, ct);
+
+        if (schedule is null)
+        {
+            schedule = new ReportSchedule
+            {
+                ClientId   = clientId,
+                Frequency  = freq,
+                DayOfWeek  = req.DayOfWeek,
+                DayOfMonth = req.DayOfMonth,
+                IsEnabled  = req.IsEnabled,
+                CreatedAt  = DateTime.UtcNow,
+                UpdatedAt  = DateTime.UtcNow,
+            };
+            _db.ReportSchedules.Add(schedule);
+        }
+        else
+        {
+            schedule.Frequency  = freq;
+            schedule.DayOfWeek  = req.DayOfWeek;
+            schedule.DayOfMonth = req.DayOfMonth;
+            schedule.IsEnabled  = req.IsEnabled;
+            schedule.UpdatedAt  = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return Ok(new ReportScheduleDto(schedule.Frequency, schedule.DayOfWeek, schedule.DayOfMonth, schedule.IsEnabled, schedule.LastSentAt));
+    }
+
+    [Authorize]
+    [HttpDelete("{clientId:long}/report-schedule")]
+    public async Task<IActionResult> DeleteReportSchedule(long clientId, CancellationToken ct)
+    {
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+
+        var schedule = await _db.ReportSchedules
+            .FirstOrDefaultAsync(s => s.ClientId == clientId, ct);
+        if (schedule is null) throw new NotFoundException();
+
+        _db.ReportSchedules.Remove(schedule);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
     // ── Audit export ────────────────────────────────────────────────────
 
     [Authorize]
@@ -451,3 +529,5 @@ public sealed record AddClientUserRequest(string Email, string? Role);
 public sealed record InviteUserRequest(string Email, string DisplayName, string? Role);
 public sealed record UpdateClientUserRoleRequest(string Role);
 public sealed record UpdateClientUserRequest(string DisplayName, string Email);
+public sealed record UpsertReportScheduleRequest(string Frequency, int DayOfWeek, int DayOfMonth, bool IsEnabled);
+public sealed record ReportScheduleDto(string Frequency, int DayOfWeek, int DayOfMonth, bool IsEnabled, DateTime? LastSentAt);

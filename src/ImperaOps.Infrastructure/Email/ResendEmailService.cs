@@ -120,6 +120,24 @@ public sealed class ResendEmailService : IEmailService
         await _resend.EmailSendAsync(msg, ct);
     }
 
+    public async Task SendScheduledReportAsync(
+        string toEmail, string toName, string clientName, string frequency,
+        int total, int open, int closed, double? avgResolutionDays, int slaBreached,
+        IReadOnlyList<(string Name, long Count)> byType,
+        IReadOnlyList<(string Location, long Count)> topLocations,
+        string dashboardUrl, CancellationToken ct = default)
+    {
+        var period = frequency == "monthly" ? "Monthly" : "Weekly";
+        var message = new EmailMessage
+        {
+            From     = _from,
+            To       = { toEmail },
+            Subject  = $"{clientName} — {period} Event Report",
+            HtmlBody = ScheduledReportHtml(toName, clientName, period, total, open, closed, avgResolutionDays, slaBreached, byType, topLocations, dashboardUrl),
+        };
+        await _resend.EmailSendAsync(message, ct);
+    }
+
     // ── HTML templates ────────────────────────────────────────────────────────
 
     private static string PasswordResetHtml(string displayName, string url) => $"""
@@ -292,6 +310,95 @@ public sealed class ResendEmailService : IEmailService
                   <p style="margin:0 0 8px;color:#64748b;font-size:14px;">On event <strong>{eventPublicId}</strong> — {eventTitle}</p>
                   <p style="margin:0 0 24px;color:#64748b;font-size:14px;">Due: {dueLine}</p>
                   <a href="{eventUrl}" style="display:inline-block;padding:12px 28px;background:#2F80ED;color:#ffffff;font-size:15px;font-weight:600;border-radius:6px;text-decoration:none;">View Event →</a>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """;
+    }
+
+    private static string ScheduledReportHtml(
+        string toName, string clientName, string period,
+        int total, int open, int closed, double? avgResolutionDays, int slaBreached,
+        IReadOnlyList<(string Name, long Count)> byType,
+        IReadOnlyList<(string Location, long Count)> topLocations,
+        string dashboardUrl)
+    {
+        var typeRows = new System.Text.StringBuilder();
+        foreach (var (name, count) in byType)
+            typeRows.Append($"""<tr><td style="padding:6px 12px;border-bottom:1px solid #e2e8f0;color:#475569;font-size:14px;">{System.Net.WebUtility.HtmlEncode(name)}</td><td style="padding:6px 12px;border-bottom:1px solid #e2e8f0;color:#0B1F3B;font-size:14px;font-weight:600;text-align:right;">{count}</td></tr>""");
+
+        var locationRows = new System.Text.StringBuilder();
+        foreach (var (location, count) in topLocations)
+            locationRows.Append($"""<tr><td style="padding:6px 12px;border-bottom:1px solid #e2e8f0;color:#475569;font-size:14px;">{System.Net.WebUtility.HtmlEncode(location)}</td><td style="padding:6px 12px;border-bottom:1px solid #e2e8f0;color:#0B1F3B;font-size:14px;font-weight:600;text-align:right;">{count}</td></tr>""");
+
+        var avgDays = avgResolutionDays.HasValue ? avgResolutionDays.Value.ToString("0.1") : "—";
+        var slaSection = slaBreached > 0
+            ? $"""<p style="margin:16px 0 0;padding:8px 12px;background:#FEF2F2;border-left:3px solid #DC2626;color:#DC2626;font-size:13px;border-radius:0 4px 4px 0;"><strong>{slaBreached}</strong> SLA breach{(slaBreached == 1 ? "" : "es")} this period</p>"""
+            : "";
+
+        return $"""
+        <!DOCTYPE html>
+        <html>
+        <body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,sans-serif;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding:40px 16px;">
+              <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;">
+                <tr><td style="background:#0B1F3B;padding:24px 32px;">
+                  <span style="color:#ffffff;font-size:20px;font-weight:bold;">ImperaOps</span>
+                  <span style="color:#94a3b8;font-size:14px;margin-left:12px;">{period} Report</span>
+                </td></tr>
+                <tr><td style="padding:32px;">
+                  <h2 style="margin:0 0 8px;color:#0B1F3B;font-size:22px;">{System.Net.WebUtility.HtmlEncode(clientName)}</h2>
+                  <p style="margin:0 0 24px;color:#64748b;font-size:14px;">{period} event summary for {System.Net.WebUtility.HtmlEncode(toName)}</p>
+
+                  <!-- KPI row -->
+                  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                    <tr>
+                      <td style="text-align:center;padding:16px;background:#f8fafc;border-radius:8px 0 0 8px;border:1px solid #e2e8f0;">
+                        <div style="font-size:28px;font-weight:700;color:#0B1F3B;">{total}</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Total</div>
+                      </td>
+                      <td style="text-align:center;padding:16px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
+                        <div style="font-size:28px;font-weight:700;color:#2F80ED;">{open}</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Open</div>
+                      </td>
+                      <td style="text-align:center;padding:16px;background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
+                        <div style="font-size:28px;font-weight:700;color:#16A34A;">{closed}</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Closed</div>
+                      </td>
+                      <td style="text-align:center;padding:16px;background:#f8fafc;border-radius:0 8px 8px 0;border:1px solid #e2e8f0;border-left:none;">
+                        <div style="font-size:28px;font-weight:700;color:#0B1F3B;">{avgDays}</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Avg Days</div>
+                      </td>
+                    </tr>
+                  </table>
+
+                  {(byType.Count > 0 ? $"""
+                  <!-- By type -->
+                  <h3 style="margin:0 0 8px;color:#0B1F3B;font-size:15px;font-weight:600;">By Event Type</h3>
+                  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
+                    {typeRows}
+                  </table>
+                  """ : "")}
+
+                  {(topLocations.Count > 0 ? $"""
+                  <!-- Top locations -->
+                  <h3 style="margin:0 0 8px;color:#0B1F3B;font-size:15px;font-weight:600;">Top Locations</h3>
+                  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;">
+                    {locationRows}
+                  </table>
+                  """ : "")}
+
+                  {slaSection}
+
+                  <div style="margin-top:24px;">
+                    <a href="{dashboardUrl}" style="display:inline-block;padding:12px 28px;background:#2F80ED;color:#ffffff;font-size:15px;font-weight:600;border-radius:6px;text-decoration:none;">View Dashboard</a>
+                  </div>
+
+                  <p style="margin:24px 0 0;color:#94a3b8;font-size:12px;">You're receiving this because scheduled reports are enabled for your organization. Manage preferences in your notification settings.</p>
                 </td></tr>
               </table>
             </td></tr>

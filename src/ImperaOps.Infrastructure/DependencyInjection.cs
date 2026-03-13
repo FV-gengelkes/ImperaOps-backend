@@ -55,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<SlaEscalationJob>();
         services.AddScoped<WebhookDeliveryJob>();
         services.AddScoped<InsightDetectionJob>();
+        services.AddScoped<ScheduledReportJob>();
 
         // Webhooks
         services.AddHttpClient("WebhookClient").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(15));

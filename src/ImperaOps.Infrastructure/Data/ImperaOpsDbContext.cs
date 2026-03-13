@@ -39,6 +39,7 @@ public sealed class ImperaOpsDbContext : DbContext
     public DbSet<ApiCredentialAuditLog> ApiCredentialAuditLogs => Set<ApiCredentialAuditLog>();
     public DbSet<WorkflowRule> WorkflowRules => Set<WorkflowRule>();
     public DbSet<WorkflowRuleExecution> WorkflowRuleExecutions => Set<WorkflowRuleExecution>();
+    public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -477,6 +478,15 @@ public sealed class ImperaOpsDbContext : DbContext
             b.HasIndex(x => x.WorkflowRuleId);
             b.HasIndex(x => x.EventId);
             b.HasIndex(x => new { x.ClientId, x.ExecutedAt });
+        });
+
+        modelBuilder.Entity<ReportSchedule>(b =>
+        {
+            b.ToTable("ReportSchedules");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Frequency).HasMaxLength(20).IsRequired();
+            b.HasIndex(x => x.ClientId).IsUnique();
         });
 
         // Convention: all ISeedable entities get IsSeedData column with default false

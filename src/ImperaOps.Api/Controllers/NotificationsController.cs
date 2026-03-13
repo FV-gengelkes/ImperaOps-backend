@@ -34,7 +34,7 @@ public sealed record SavePreferencesRequest(List<NotificationPreferenceDto> Pref
 [Route("api/v1/notifications")]
 public sealed class NotificationsController : ScopedControllerBase
 {
-    private static readonly string[] KnownTypes = ["event_assigned", "task_assigned", "comment_added", "status_changed", "task_due_reminder", "workflow_rule"];
+    private static readonly string[] KnownTypes = ["event_assigned", "task_assigned", "comment_added", "status_changed", "task_due_reminder", "workflow_rule", "scheduled_report"];
 
     private readonly ImperaOpsDbContext _db;
     private readonly INotificationPushService _push;

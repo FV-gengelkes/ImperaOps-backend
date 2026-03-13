@@ -225,6 +225,12 @@ RecurringJob.AddOrUpdate<InsightDetectionJob>(
     "0 */6 * * *",         // every 6 hours
     new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
+RecurringJob.AddOrUpdate<ScheduledReportJob>(
+    "scheduled-reports",
+    x => x.RunAsync(CancellationToken.None),
+    "0 7 * * *",           // 07:00 UTC daily
+    new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+
 app.MapControllers();
 
 app.Run();
