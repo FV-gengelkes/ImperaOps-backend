@@ -68,4 +68,7 @@ public sealed class WorkflowActionConfig
 
     // set_root_cause
     public long? RootCauseId { get; set; }
+
+    // round_robin_assign
+    public long[]? RoundRobinUserIds { get; set; }
 }

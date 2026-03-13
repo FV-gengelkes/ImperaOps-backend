@@ -3,6 +3,7 @@ using ImperaOps.Application.Tasks;
 using ImperaOps.Domain.Entities;
 using ImperaOps.Infrastructure.Data;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 
 namespace ImperaOps.Infrastructure.Workflows;
 
@@ -48,5 +49,32 @@ public sealed class WorkflowActionService : IWorkflowActionService
             CreatedAt = DateTimeOffset.UtcNow,
         });
         await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<long> GetNextRoundRobinUserAsync(long workflowRuleId, long[] userIds, CancellationToken ct)
+    {
+        var state = await _db.RoundRobinStates
+            .FirstOrDefaultAsync(s => s.WorkflowRuleId == workflowRuleId, ct);
+
+        int nextIndex;
+        if (state == null)
+        {
+            nextIndex = 0;
+            _db.RoundRobinStates.Add(new RoundRobinState
+            {
+                WorkflowRuleId = workflowRuleId,
+                LastAssignedIndex = 0,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+        }
+        else
+        {
+            nextIndex = (state.LastAssignedIndex + 1) % userIds.Length;
+            state.LastAssignedIndex = nextIndex;
+            state.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return userIds[nextIndex];
     }
 }

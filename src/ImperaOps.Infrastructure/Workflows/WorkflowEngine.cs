@@ -175,6 +175,13 @@ public sealed class WorkflowEngine : IWorkflowEngine
                     count++;
                     break;
 
+                case "round_robin_assign" when c.RoundRobinUserIds is { Length: > 0 }:
+                    var nextUserId = await _actions.GetNextRoundRobinUserAsync(rule.Id, c.RoundRobinUserIds, ct);
+                    await _mutator.AssignOwnerAsync(ev.Id, ev.ClientId, nextUserId, rule.Name, ct);
+                    await _notifier.NotifyEventAssignedAsync(nextUserId, ev.ClientId, ev.PublicId, ev.Title, ct);
+                    count++;
+                    break;
+
                 default:
                     _logger.LogWarning("Unknown or misconfigured workflow action type: {Type}", action.Type);
                     break;

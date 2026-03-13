@@ -40,6 +40,7 @@ public sealed class ImperaOpsDbContext : DbContext
     public DbSet<WorkflowRule> WorkflowRules => Set<WorkflowRule>();
     public DbSet<WorkflowRuleExecution> WorkflowRuleExecutions => Set<WorkflowRuleExecution>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
+    public DbSet<RoundRobinState> RoundRobinStates => Set<RoundRobinState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -487,6 +488,13 @@ public sealed class ImperaOpsDbContext : DbContext
             b.Property(x => x.Id).ValueGeneratedOnAdd();
             b.Property(x => x.Frequency).HasMaxLength(20).IsRequired();
             b.HasIndex(x => x.ClientId).IsUnique();
+        });
+
+        modelBuilder.Entity<RoundRobinState>(b =>
+        {
+            b.ToTable("RoundRobinStates");
+            b.HasKey(x => x.WorkflowRuleId);
+            b.Property(x => x.WorkflowRuleId).ValueGeneratedNever();
         });
 
         // Convention: all ISeedable entities get IsSeedData column with default false
