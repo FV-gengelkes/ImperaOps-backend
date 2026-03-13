@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ImperaOps.Api.Contracts;
 
 public sealed record TaskDto(
@@ -17,15 +19,15 @@ public sealed record TaskDto(
 );
 
 public sealed record CreateTaskRequest(
-    string Title,
-    string? Description,
+    [StringLength(500, ErrorMessage = "Task title must be 500 characters or fewer.")] string Title,
+    [StringLength(5000, ErrorMessage = "Task description must be 5,000 characters or fewer.")] string? Description,
     long? AssignedToUserId,
     DateTimeOffset? DueAt
 );
 
 public sealed record UpdateTaskRequest(
-    string Title,
-    string? Description,
+    [StringLength(500, ErrorMessage = "Task title must be 500 characters or fewer.")] string Title,
+    [StringLength(5000, ErrorMessage = "Task description must be 5,000 characters or fewer.")] string? Description,
     long? AssignedToUserId,
     DateTimeOffset? DueAt
 );

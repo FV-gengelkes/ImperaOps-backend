@@ -1,26 +1,28 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ImperaOps.Api.Contracts;
 
 public sealed record CreateEventRequest(
     long ClientId,
     long EventTypeId,
     long WorkflowStatusId,
-    string Title,
+    [StringLength(500, ErrorMessage = "Title must be 500 characters or fewer.")] string Title,
     DateTimeOffset OccurredAt,
-    string Location,
-    string Description,
+    [StringLength(256, ErrorMessage = "Location must be 256 characters or fewer.")] string Location,
+    [StringLength(5000, ErrorMessage = "Description must be 5,000 characters or fewer.")] string Description,
     long? ReportedByUserId
 );
 
 public sealed record UpdateEventRequest(
     long EventTypeId,
     long WorkflowStatusId,
-    string Title,
+    [StringLength(500, ErrorMessage = "Title must be 500 characters or fewer.")] string Title,
     DateTimeOffset OccurredAt,
-    string Location,
-    string Description,
+    [StringLength(256, ErrorMessage = "Location must be 256 characters or fewer.")] string Location,
+    [StringLength(5000, ErrorMessage = "Description must be 5,000 characters or fewer.")] string Description,
     long? OwnerUserId,
     long? RootCauseId = null,
-    string? CorrectiveAction = null
+    [StringLength(500, ErrorMessage = "Corrective action must be 500 characters or fewer.")] string? CorrectiveAction = null
 );
 
 public sealed record BulkUpdateEventRequest(

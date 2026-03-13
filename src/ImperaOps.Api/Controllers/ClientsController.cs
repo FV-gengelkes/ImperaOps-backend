@@ -405,6 +405,45 @@ public sealed class ClientsController : ScopedControllerBase
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
+
+    // ── Audit export ────────────────────────────────────────────────────
+
+    [Authorize]
+    [HttpGet("{clientId:long}/audit/export")]
+    public async Task<IActionResult> ExportAuditCsv(long clientId, CancellationToken ct)
+    {
+        RequireClientAccess(clientId);
+        if (!await IsAdminOfClientAsync(_db, clientId, User, ct)) throw new ForbiddenException();
+
+        var rows = await _db.AuditEvents
+            .AsNoTracking()
+            .Where(a => a.ClientId == clientId)
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => new { a.CreatedAt, a.EntityType, a.EventType, a.UserDisplayName, a.Body })
+            .ToListAsync(ct);
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Timestamp,Entity Type,Action,User,Details");
+        foreach (var r in rows)
+        {
+            sb.Append(r.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")).Append(',');
+            sb.Append(CsvEscape(r.EntityType)).Append(',');
+            sb.Append(CsvEscape(r.EventType)).Append(',');
+            sb.Append(CsvEscape(r.UserDisplayName)).Append(',');
+            sb.AppendLine(CsvEscape(r.Body));
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+        return File(bytes, "text/csv", $"audit-log-{clientId}-{DateTime.UtcNow:yyyyMMdd}.csv");
+    }
+
+    private static string CsvEscape(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
+    }
 }
 
 public sealed record ClientUserDto(long Id, string DisplayName, string Email, string Role, bool IsActive, bool IsSuperAdmin);

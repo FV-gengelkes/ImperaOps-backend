@@ -252,6 +252,42 @@ public sealed class AuthController : ControllerBase
         return Ok(new AuthResultDto(jwtToken, user.DisplayName, user.Email, user.IsSuperAdmin, user.ActiveClientId, activeClientName, clients));
     }
 
+    /// <summary>Refreshes the JWT for the current session. The session expiry is extended and a new token is returned.</summary>
+    [Authorize]
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh(CancellationToken ct)
+    {
+        if (!long.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            return Unauthorized();
+
+        var sid = User.FindFirst("sid")?.Value;
+        if (sid is null) return Unauthorized();
+
+        var session = await _db.UserTokens
+            .FirstOrDefaultAsync(t => t.Token == sid && t.Type == "Session" && t.ExpiresAt > DateTimeOffset.UtcNow, ct);
+        if (session is null)
+            return Unauthorized(new { message = "Session expired or revoked." });
+
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null) return Unauthorized();
+
+        var clients = await _db.UserClientAccess
+            .AsNoTracking()
+            .Where(a => a.UserId == userId)
+            .Join(_db.Clients.Where(c => c.Status != "Inactive"),
+                  a => a.ClientId, c => c.Id,
+                  (a, c) => new ClientAccessDto(c.Id, c.Name, a.Role, c.ParentClientId))
+            .ToListAsync(ct);
+
+        // Extend session expiry
+        var expiryMinutes = int.Parse(_config["Jwt:ExpiryMinutes"] ?? "480");
+        session.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(expiryMinutes);
+        await _db.SaveChangesAsync(ct);
+
+        var jwt = _jwt.GenerateToken(userId, user.Email, user.DisplayName, user.IsSuperAdmin, clients, sid);
+        return Ok(new { token = jwt });
+    }
+
     /// <summary>Persists the user's active (selected) client so it survives logouts and device changes.</summary>
     [Authorize]
     [HttpPut("active-client")]

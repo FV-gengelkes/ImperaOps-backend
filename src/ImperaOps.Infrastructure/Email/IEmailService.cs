@@ -9,4 +9,5 @@ public interface IEmailService
     Task SendCommentAddedAsync(string toEmail, string toName, string actorName, string eventPublicId, string eventTitle, string commentSnippet, string eventUrl, CancellationToken ct = default);
     Task SendStatusChangedAsync(string toEmail, string toName, string actorName, string eventPublicId, string eventTitle, string newStatusName, string eventUrl, CancellationToken ct = default);
     Task SendTaskDueReminderAsync(string toEmail, string displayName, string taskTitle, string eventPublicId, string eventTitle, DateTimeOffset dueAt, bool isOverdue, string eventUrl, CancellationToken ct = default);
+    Task SendWorkflowRuleAsync(string toEmail, string toName, string ruleName, string message, string eventPublicId, string eventUrl, CancellationToken ct = default);
 }

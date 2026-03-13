@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ImperaOps.Api.Contracts;
 
 public sealed record AuditEventDto(
@@ -12,4 +14,6 @@ public sealed record AuditEventDto(
     DateTimeOffset CreatedAt
 );
 
-public sealed record CreateCommentRequest(string Body);
+public sealed record CreateCommentRequest(
+    [StringLength(10000, ErrorMessage = "Comment must be 10,000 characters or fewer.")] string Body
+);

@@ -108,6 +108,18 @@ public sealed class ResendEmailService : IEmailService
         await _resend.EmailSendAsync(message, ct);
     }
 
+    public async Task SendWorkflowRuleAsync(string toEmail, string toName, string ruleName, string message, string eventPublicId, string eventUrl, CancellationToken ct = default)
+    {
+        var msg = new EmailMessage
+        {
+            From     = _from,
+            To       = { toEmail },
+            Subject  = $"Workflow alert: {ruleName} — {eventPublicId}",
+            HtmlBody = WorkflowRuleHtml(toName, ruleName, message, eventPublicId, eventUrl),
+        };
+        await _resend.EmailSendAsync(msg, ct);
+    }
+
     // ── HTML templates ────────────────────────────────────────────────────────
 
     private static string PasswordResetHtml(string displayName, string url) => $"""
@@ -288,4 +300,29 @@ public sealed class ResendEmailService : IEmailService
         </html>
         """;
     }
+
+    private static string WorkflowRuleHtml(string toName, string ruleName, string message, string eventPublicId, string eventUrl) => $"""
+        <!DOCTYPE html>
+        <html>
+        <body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,sans-serif;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding:40px 16px;">
+              <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;">
+                <tr><td style="background:#0B1F3B;padding:24px 32px;">
+                  <span style="color:#ffffff;font-size:20px;font-weight:bold;">ImperaOps</span>
+                </td></tr>
+                <tr><td style="padding:32px;">
+                  <h2 style="margin:0 0 16px;color:#0B1F3B;font-size:22px;">Workflow Alert</h2>
+                  <p style="margin:0 0 16px;color:#475569;font-size:15px;">Hi {toName},</p>
+                  <p style="margin:0 0 8px;color:#475569;font-size:15px;">A workflow rule triggered on event <strong>{eventPublicId}</strong>.</p>
+                  <p style="margin:0 0 8px;color:#0B1F3B;font-size:15px;font-weight:600;">{ruleName}</p>
+                  <blockquote style="margin:0 0 24px;padding:12px 16px;background:#f8fafc;border-left:3px solid #F59E0B;color:#475569;font-size:14px;border-radius:0 4px 4px 0;">{message}</blockquote>
+                  <a href="{eventUrl}" style="display:inline-block;padding:12px 28px;background:#2F80ED;color:#ffffff;font-size:15px;font-weight:600;border-radius:6px;text-decoration:none;">View Event</a>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """;
 }
