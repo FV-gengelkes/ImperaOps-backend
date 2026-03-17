@@ -4,6 +4,7 @@ using ImperaOps.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace ImperaOps.Api;
 
@@ -32,6 +33,28 @@ public abstract class ScopedControllerBase : ControllerBase
     {
         if (!CurrentUser.HasClientAccess(clientId))
             throw new NotFoundException();
+    }
+
+    // ── Module gating ──────────────────────────────────────────────────
+
+    /// <summary>Throws ForbiddenException if the given module is not enabled for this client.</summary>
+    protected static async Task RequireModuleAsync(
+        ImperaOpsDbContext db, long clientId, string moduleId, CancellationToken ct)
+    {
+        var client = await db.Clients.AsNoTracking()
+            .Where(c => c.Id == clientId)
+            .Select(c => c.EnabledModuleIds)
+            .FirstOrDefaultAsync(ct);
+
+        if (string.IsNullOrWhiteSpace(client))
+            throw new ForbiddenException("This feature requires an add-on module that is not enabled.");
+
+        List<string>? ids;
+        try { ids = JsonSerializer.Deserialize<List<string>>(client); }
+        catch { ids = null; }
+
+        if (ids == null || !ids.Contains(moduleId))
+            throw new ForbiddenException("This feature requires an add-on module that is not enabled.");
     }
 
     // ── Role queries ─────────────────────────────────────────────────────

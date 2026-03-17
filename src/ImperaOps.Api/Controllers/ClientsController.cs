@@ -242,6 +242,30 @@ public sealed class ClientsController : ScopedControllerBase
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
     }
 
+    // ── Modules ──────────────────────────────────────────────────────────
+
+    /// <summary>Returns enabled module IDs for the authenticated user's client.</summary>
+    [Authorize]
+    [HttpGet("{clientId:long}/modules")]
+    public async Task<IActionResult> GetClientModules(long clientId, CancellationToken ct)
+    {
+        RequireClientAccess(clientId);
+
+        var enabledJson = await _db.Clients.AsNoTracking()
+            .Where(c => c.Id == clientId)
+            .Select(c => c.EnabledModuleIds)
+            .FirstOrDefaultAsync(ct);
+
+        IReadOnlyList<string> ids = [];
+        if (!string.IsNullOrWhiteSpace(enabledJson))
+        {
+            try { ids = JsonSerializer.Deserialize<List<string>>(enabledJson) ?? []; }
+            catch { ids = []; }
+        }
+
+        return Ok(new { enabledModuleIds = ids });
+    }
+
     // ── Templates (client-scoped, for onboarding wizard) ──────────────
 
     /// <summary>Returns available industry templates for client admins.</summary>

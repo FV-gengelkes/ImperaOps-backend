@@ -145,6 +145,14 @@ public sealed record CreateSlaRuleRequest(
     int?    ClosureHours
 );
 
+// ── Modules ──────────────────────────────────────────────────────────────────
+
+public sealed record ModuleDefinitionDto(string Id, string Name, string Description, string Icon, string Category);
+
+public sealed record ClientModulesDto(IReadOnlyList<string> EnabledModuleIds);
+
+public sealed record UpdateClientModulesRequest(IReadOnlyList<string> ModuleIds);
+
 /// <summary>Audit event DTO enriched with the client name for the admin audit log.</summary>
 public sealed record AdminAuditEventDto(
     long     Id,

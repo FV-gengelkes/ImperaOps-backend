@@ -179,6 +179,7 @@ public sealed class ImperaOpsDbContext : DbContext
             b.Property(x => x.PrimaryColor).HasMaxLength(7);
             b.Property(x => x.SystemName).HasMaxLength(100);
             b.Property(x => x.LinkColor).HasMaxLength(7);
+            b.Property(x => x.EnabledModuleIds).HasColumnType("longtext");
             b.Property(x => x.InboundEmailSlug).HasMaxLength(100);
             b.Property(x => x.ClientSid).HasMaxLength(64).IsRequired();
             b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");

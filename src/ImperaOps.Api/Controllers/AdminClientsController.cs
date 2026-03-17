@@ -3,6 +3,7 @@ using ImperaOps.Application.Abstractions;
 using ImperaOps.Application.Events.Dtos;
 using ImperaOps.Domain.Entities;
 using ImperaOps.Domain.Exceptions;
+using ImperaOps.Domain.Modules;
 using ImperaOps.Infrastructure.Data;
 using ImperaOps.Infrastructure.Templates;
 using Microsoft.AspNetCore.Authorization;
@@ -346,6 +347,56 @@ public sealed class AdminClientsController(
         return NoContent();
     }
 
+    // ── Modules ────────────────────────────────────────────────────────────
+
+    [HttpGet("modules")]
+    public IActionResult GetModules()
+    {
+        var result = ModuleRegistry.All.Values
+            .OrderBy(m => m.Category).ThenBy(m => m.Name)
+            .Select(m => new ModuleDefinitionDto(m.Id, m.Name, m.Description, m.Icon, m.Category))
+            .ToList();
+        return Ok(result);
+    }
+
+    [HttpGet("clients/{id:long}/modules")]
+    public async Task<ActionResult<ClientModulesDto>> GetClientModules(long id, CancellationToken ct)
+    {
+        var client = await db.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, ct);
+        if (client is null) throw new NotFoundException();
+        return Ok(new ClientModulesDto(ParseModuleIds(client.EnabledModuleIds)));
+    }
+
+    [HttpPut("clients/{id:long}/modules")]
+    public async Task<IActionResult> UpdateClientModules(
+        long id, [FromBody] UpdateClientModulesRequest req, CancellationToken ct)
+    {
+        var client = await db.Clients.FindAsync([id], ct);
+        if (client is null) throw new NotFoundException();
+
+        // Validate all module IDs exist in registry
+        var invalid = req.ModuleIds.Where(m => !ModuleRegistry.Exists(m)).ToList();
+        if (invalid.Count > 0)
+            throw new ValidationException($"Unknown module IDs: {string.Join(", ", invalid)}");
+
+        var oldIds = ParseModuleIds(client.EnabledModuleIds);
+        client.EnabledModuleIds = req.ModuleIds.Count > 0
+            ? JsonSerializer.Serialize(req.ModuleIds)
+            : null;
+
+        var added   = req.ModuleIds.Except(oldIds).ToList();
+        var removed = oldIds.Except(req.ModuleIds).ToList();
+
+        var changes = new List<string>();
+        if (added.Count > 0)   changes.Add($"enabled: {string.Join(", ", added)}");
+        if (removed.Count > 0) changes.Add($"disabled: {string.Join(", ", removed)}");
+
+        Audit.Record("client", id, id, "modules_updated",
+            changes.Count > 0 ? string.Join("; ", changes) + "." : "Modules unchanged.");
+        await db.SaveChangesAsync(ct);
+        return Ok(new ClientModulesDto(ParseModuleIds(client.EnabledModuleIds)));
+    }
+
     // ── Admin Audit Log ──────────────────────────────────────────────────
 
     [HttpGet("audit")]
@@ -400,6 +451,13 @@ public sealed class AdminClientsController(
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private static IReadOnlyList<string> ParseTemplateIds(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch { return []; }
+    }
+
+    private static IReadOnlyList<string> ParseModuleIds(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return [];
         try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
