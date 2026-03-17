@@ -41,6 +41,8 @@ public sealed class ImperaOpsDbContext : DbContext
     public DbSet<WorkflowRuleExecution> WorkflowRuleExecutions => Set<WorkflowRuleExecution>();
     public DbSet<ReportSchedule> ReportSchedules => Set<ReportSchedule>();
     public DbSet<RoundRobinState> RoundRobinStates => Set<RoundRobinState>();
+    public DbSet<AgField> AgFields => Set<AgField>();
+    public DbSet<SprayJob> SprayJobs => Set<SprayJob>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -496,6 +498,45 @@ public sealed class ImperaOpsDbContext : DbContext
             b.ToTable("RoundRobinStates");
             b.HasKey(x => x.WorkflowRuleId);
             b.Property(x => x.WorkflowRuleId).ValueGeneratedNever();
+        });
+
+        modelBuilder.Entity<AgField>(b =>
+        {
+            b.ToTable("AgFields");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            b.Property(x => x.Acreage).HasColumnType("decimal(10,2)");
+            b.Property(x => x.GrowerName).HasMaxLength(200);
+            b.Property(x => x.GrowerContact).HasMaxLength(200);
+            b.Property(x => x.Address).HasMaxLength(500);
+            b.Property(x => x.BoundaryGeoJson).HasColumnType("longtext");
+            b.Property(x => x.Notes).HasColumnType("longtext");
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => x.ClientId);
+            b.HasQueryFilter(x => x.DeletedAt == null);
+        });
+
+        modelBuilder.Entity<SprayJob>(b =>
+        {
+            b.ToTable("SprayJobs");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Id).ValueGeneratedOnAdd();
+            b.Property(x => x.JobNumber).HasMaxLength(20).IsRequired();
+            b.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            b.Property(x => x.DroneOperator).HasMaxLength(200);
+            b.Property(x => x.Product).HasMaxLength(200);
+            b.Property(x => x.ApplicationRate).HasMaxLength(50);
+            b.Property(x => x.ApplicationUnit).HasMaxLength(50);
+            b.Property(x => x.WeatherConditions).HasColumnType("longtext");
+            b.Property(x => x.FlightLogGeoJson).HasColumnType("longtext");
+            b.Property(x => x.Notes).HasColumnType("longtext");
+            b.Property(x => x.DeletedAt).HasColumnType("datetime(6)");
+            b.HasIndex(x => x.ClientId);
+            b.HasIndex(x => x.FieldId);
+            b.HasIndex(x => new { x.ClientId, x.ReferenceNumber }).IsUnique();
+            b.HasIndex(x => new { x.ClientId, x.JobNumber }).IsUnique();
+            b.HasQueryFilter(x => x.DeletedAt == null);
         });
 
         // Convention: all ISeedable entities get IsSeedData column with default false
